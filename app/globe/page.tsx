@@ -97,7 +97,7 @@ export default function GlobePage() {
     async function init() {
       // MUST be set before Cesium is imported — tells the library where
       // its Workers/, Assets/, Widgets/, and ThirdParty/ folders live.
-      (window as Record<string, unknown>).CESIUM_BASE_URL = "/cesium";
+      (window as unknown as Record<string, unknown>).CESIUM_BASE_URL = "/cesium";
 
       const Cesium = await import("cesium");
       if (cancelled || !containerRef.current) return;
