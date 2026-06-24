@@ -18,15 +18,12 @@ export function TelemetryCard({ title, icon, children, loading, className = "", 
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.6, delay, ease: [0.16, 1, 0.3, 1] }}
-      className={`relative overflow-hidden rounded-2xl border border-white/10 bg-slate-950/60 p-5 shadow-[0_8px_32px_rgba(0,0,0,0.4)] backdrop-blur-xl ${className}`}
+      className={`glass-panel flex flex-col p-6 hover-scale ${className}`}
     >
-      {/* Subtle top gradient line */}
-      <div className="absolute top-0 left-0 h-[1px] w-full bg-gradient-to-r from-transparent via-white/20 to-transparent" />
-
       {/* Header */}
-      <div className="mb-4 flex items-center gap-2">
+      <div className="mb-4 flex items-center justify-between border-b border-white/5 pb-4">
         {icon && <div className="text-sky-400">{icon}</div>}
-        <h3 className="font-mono text-[10px] uppercase tracking-[0.15em] text-slate-400 font-medium">
+        <h3 className="font-mono text-[10px] uppercase tracking-widest text-slate-400">
           {title}
         </h3>
       </div>
