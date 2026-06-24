@@ -26,7 +26,11 @@ export const revalidate = 600; // Cache for 10 minutes to avoid rate-limiting
 export async function GET() {
   try {
     const res = await fetch("https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=json", {
-      next: { revalidate: 600 }
+      next: { revalidate: 600 },
+      headers: {
+        "User-Agent": "ProjectZenith/1.0 (SpaceApps)",
+        "Accept": "application/json"
+      }
     });
 
     if (!res.ok) {
