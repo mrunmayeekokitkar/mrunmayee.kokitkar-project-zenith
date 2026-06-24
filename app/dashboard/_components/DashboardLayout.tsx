@@ -26,17 +26,12 @@ export function DashboardLayout() {
     // Update local deterministic data
     setLocalData(generateLocalTelemetryMock(lat, lng));
 
-    // Fetch initial satellite data (this doesn't change frequently)
-    fetchSatellites().then(res => {
-      if (active && res) setSatData(res);
-    });
-
-    // Initial ISS fetch
-    fetchISSPosition().then(res => {
-      if (active && res) {
-        setIssData(res);
-        setLoading(false);
-      }
+    // Initial fetch for all external data
+    Promise.all([
+      fetchSatellites().then(res => { if (active && res) setSatData(res); }).catch(() => {}),
+      fetchISSPosition().then(res => { if (active && res) setIssData(res); }).catch(() => {})
+    ]).finally(() => {
+      if (active) setLoading(false);
     });
 
     return () => { active = false; };

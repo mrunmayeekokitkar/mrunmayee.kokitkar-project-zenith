@@ -22,7 +22,7 @@ export interface SatelliteProxyData {
  */
 export async function fetchISSPosition(): Promise<ISSData | null> {
   try {
-    const res = await fetch("http://api.open-notify.org/iss-now.json", {
+    const res = await fetch("/api/iss", {
       cache: "no-store", // We want this as fresh as possible (updated every few seconds)
     });
     const data = await res.json();
