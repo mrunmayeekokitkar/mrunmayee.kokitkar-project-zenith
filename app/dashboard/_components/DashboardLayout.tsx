@@ -7,6 +7,7 @@ import { ISSPositionCard } from "./cards/ISSPositionCard";
 import { ActiveSatellitesCard } from "./cards/ActiveSatellitesCard";
 import { ObservationConditions } from "./cards/ObservationConditions";
 import { CosmicTwinScore } from "./cards/CosmicTwinScore";
+import { LocationSearch } from "../../components/LocationSearch";
 
 export function DashboardLayout() {
   const [lat, setLat] = useState(19.0760); // Default Mumbai
@@ -39,21 +40,14 @@ export function DashboardLayout() {
       
       {/* ── Input Header ── */}
       <div className="rounded-2xl border border-white/10 bg-slate-950/60 p-5 backdrop-blur-xl shadow-2xl flex flex-col md:flex-row gap-4 items-end justify-between">
-        <div className="flex gap-4 w-full md:w-auto">
-          <div className="flex-1 md:flex-initial">
-            <label className="mb-1 block font-mono text-[9px] uppercase tracking-wider text-slate-500">Latitude</label>
-            <input 
-              type="number" step="0.0001" value={lat} onChange={e => setLat(Number(e.target.value))}
-              className="w-full md:w-32 rounded-lg border border-white/10 bg-black/40 px-3 py-2 font-mono text-sm text-slate-200 outline-none focus:border-sky-500/50 focus:bg-sky-500/10 transition-colors"
-            />
-          </div>
-          <div className="flex-1 md:flex-initial">
-            <label className="mb-1 block font-mono text-[9px] uppercase tracking-wider text-slate-500">Longitude</label>
-            <input 
-              type="number" step="0.0001" value={lng} onChange={e => setLng(Number(e.target.value))}
-              className="w-full md:w-32 rounded-lg border border-white/10 bg-black/40 px-3 py-2 font-mono text-sm text-slate-200 outline-none focus:border-sky-500/50 focus:bg-sky-500/10 transition-colors"
-            />
-          </div>
+        <div className="w-full md:w-[400px]">
+          <LocationSearch 
+            defaultQuery="Mumbai"
+            onLocationSelect={(newLat, newLng) => {
+              setLat(newLat);
+              setLng(newLng);
+            }} 
+          />
         </div>
         
         <button 

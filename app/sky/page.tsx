@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { LocationSearch } from "../components/LocationSearch";
 
 /* ------------------------------------------------------------------ */
 /* Types & Math                                                       */
@@ -245,29 +246,10 @@ export default function SkyTimeMachine() {
 
         <div className="flex flex-col gap-5 flex-1">
           {/* Coordinates */}
-          <div className="flex gap-4">
-            <div className="flex-1">
-              <label className="mb-1 block font-mono text-[9px] uppercase tracking-wider text-slate-500">Latitude</label>
-              <input 
-                type="number" step="0.0001" value={lat} onChange={e => setLat(Number(e.target.value))}
-                className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 font-mono text-sm text-slate-200 outline-none focus:border-sky-500/50 focus:bg-sky-500/10 transition-colors"
-              />
-            </div>
-            <div className="flex-1">
-              <label className="mb-1 block font-mono text-[9px] uppercase tracking-wider text-slate-500">Longitude</label>
-              <input 
-                type="number" step="0.0001" value={lng} onChange={e => setLng(Number(e.target.value))}
-                className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 font-mono text-sm text-slate-200 outline-none focus:border-sky-500/50 focus:bg-sky-500/10 transition-colors"
-              />
-            </div>
-          </div>
-
-          {/* Quick Presets */}
-          <div className="flex gap-2">
-            <button onClick={() => setLocation(19.0760, 72.8777)} className="flex-1 rounded border border-white/5 bg-white/5 py-1 font-mono text-[9px] uppercase text-slate-400 hover:bg-white/10 hover:text-slate-200 transition-colors cursor-pointer">Mumbai</button>
-            <button onClick={() => setLocation(40.7128, -74.0060)} className="flex-1 rounded border border-white/5 bg-white/5 py-1 font-mono text-[9px] uppercase text-slate-400 hover:bg-white/10 hover:text-slate-200 transition-colors cursor-pointer">NYC</button>
-            <button onClick={() => setLocation(51.5074, -0.1278)} className="flex-1 rounded border border-white/5 bg-white/5 py-1 font-mono text-[9px] uppercase text-slate-400 hover:bg-white/10 hover:text-slate-200 transition-colors cursor-pointer">London</button>
-          </div>
+          <LocationSearch 
+            defaultQuery="Mumbai"
+            onLocationSelect={(l, lg) => setLocation(l, lg)}
+          />
 
           <hr className="border-white/5 my-2" />
 
