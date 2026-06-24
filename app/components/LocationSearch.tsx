@@ -11,7 +11,7 @@ interface LocationResult {
 }
 
 interface LocationSearchProps {
-  onLocationSelect: (lat: number, lng: number) => void;
+  onLocationSelect: (lat: number, lng: number, name?: string) => void;
   defaultQuery?: string;
 }
 
@@ -89,7 +89,7 @@ export function LocationSearch({ onLocationSelect, defaultQuery = "" }: Location
     setIsOpen(false);
     
     // Pass back to parent
-    onLocationSelect(lat, lng);
+    onLocationSelect(lat, lng, result.display_name.split(",")[0]);
   };
 
   return (

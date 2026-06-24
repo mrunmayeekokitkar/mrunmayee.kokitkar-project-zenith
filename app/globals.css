@@ -1,13 +1,50 @@
 @import "tailwindcss";
 
-:root {
+/* ── Dark Theme (default) ── */
+:root,
+[data-theme="dark"] {
   --background: #03040a;
   --foreground: #ededed;
-  
-  /* Zenith Premium System */
+  --surface: #0d1117;
+  --surface-2: rgba(15, 23, 42, 0.6);
+  --border: rgba(255, 255, 255, 0.06);
+  --border-strong: rgba(255, 255, 255, 0.12);
+  --text-muted: #64748b;
+  --text-secondary: #94a3b8;
+  --accent: #38bdf8;
+  --accent-glow: rgba(56, 189, 248, 0.3);
+  --cosmic-top: rgba(20, 25, 50, 0.9);
+  --cosmic-mid: rgba(3, 4, 10, 1);
+  --nebula-1: rgba(56, 189, 248, 0.04);
+  --nebula-2: rgba(168, 85, 247, 0.04);
+
+  /* Zenith Glass System */
   --glass-bg: rgba(15, 23, 42, 0.6);
   --glass-border: rgba(255, 255, 255, 0.06);
   --glass-highlight: rgba(255, 255, 255, 0.1);
+  --glass-blur: 24px;
+}
+
+/* ── Light Theme ── */
+[data-theme="light"] {
+  --background: #f0f4ff;
+  --foreground: #0f172a;
+  --surface: #ffffff;
+  --surface-2: rgba(255, 255, 255, 0.7);
+  --border: rgba(15, 23, 42, 0.08);
+  --border-strong: rgba(15, 23, 42, 0.15);
+  --text-muted: #64748b;
+  --text-secondary: #475569;
+  --accent: #0284c7;
+  --accent-glow: rgba(2, 132, 199, 0.2);
+  --cosmic-top: rgba(186, 230, 253, 0.8);
+  --cosmic-mid: #f0f4ff;
+  --nebula-1: rgba(56, 189, 248, 0.1);
+  --nebula-2: rgba(168, 85, 247, 0.06);
+
+  --glass-bg: rgba(255, 255, 255, 0.6);
+  --glass-border: rgba(15, 23, 42, 0.08);
+  --glass-highlight: rgba(255, 255, 255, 0.8);
   --glass-blur: 24px;
 }
 
@@ -22,9 +59,9 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
-  /* Apple-style typography smoothing */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  transition: background 0.4s ease, color 0.4s ease;
 }
 
 /* ── Global Animated Cosmic Gradient Background ── */
@@ -32,17 +69,18 @@ body {
   position: fixed;
   inset: 0;
   z-index: -1;
-  background: radial-gradient(circle at 50% 0%, rgba(20, 25, 50, 0.8) 0%, rgba(3, 4, 10, 1) 70%);
+  background: radial-gradient(circle at 50% 0%, var(--cosmic-top) 0%, var(--cosmic-mid) 70%);
   overflow: hidden;
+  transition: background 0.6s ease;
 }
 
 .cosmic-bg::before {
   content: "";
   position: absolute;
   inset: -50%;
-  background-image: 
-    radial-gradient(circle at 30% 20%, rgba(56, 189, 248, 0.03) 0%, transparent 40%),
-    radial-gradient(circle at 80% 80%, rgba(168, 85, 247, 0.03) 0%, transparent 40%);
+  background-image:
+    radial-gradient(circle at 30% 20%, var(--nebula-1) 0%, transparent 40%),
+    radial-gradient(circle at 80% 80%, var(--nebula-2) 0%, transparent 40%);
   animation: cosmic-drift 30s linear infinite alternate;
 }
 

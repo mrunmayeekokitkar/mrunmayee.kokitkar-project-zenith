@@ -1,349 +1,625 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { LocationSearch } from "../components/LocationSearch";
 
 /* ------------------------------------------------------------------ */
-/* Types & Math                                                       */
+/* Types & Math                                                        */
 /* ------------------------------------------------------------------ */
 
-interface GeoCoords {
-  lat: number;
-  lng: number;
-}
+interface GeoCoords { lat: number; lng: number; }
 
 interface SkyData {
   sunAltitude: number;
   sunAzimuth: number;
   moonPhase: number;
+  moonPhaseName: string;
   siderealTime: number;
   dayLengthHr: number;
   isDay: boolean;
+  isTwilight: boolean;
+  visiblePlanets: string[];
 }
 
-// Simple deterministic math to calculate sky values based on lat/lng and date
+function getMoonPhaseName(phase: number): string {
+  if (phase < 0.03 || phase > 0.97) return "🌑 New Moon";
+  if (phase < 0.22) return "🌒 Waxing Crescent";
+  if (phase < 0.28) return "🌓 First Quarter";
+  if (phase < 0.47) return "🌔 Waxing Gibbous";
+  if (phase < 0.53) return "🌕 Full Moon";
+  if (phase < 0.72) return "🌖 Waning Gibbous";
+  if (phase < 0.78) return "🌗 Last Quarter";
+  return "🌘 Waning Crescent";
+}
+
+function getVisiblePlanets(date: Date): string[] {
+  const d = (date.getTime() / 86400000) + 2440587.5 - 2451545.0;
+  const planets = [];
+  const month = date.getMonth();
+  if (Math.sin(d / 116) > 0.3) planets.push("♂ Mars");
+  if (Math.sin(d / 398.88) > 0.4) planets.push("♃ Jupiter");
+  if (Math.sin(d / 378.09) > 0.2) planets.push("♄ Saturn");
+  if (month >= 3 && month <= 8) planets.push("♀ Venus");
+  if (Math.abs(Math.sin(d / 87.97)) > 0.7) planets.push("☿ Mercury");
+  return planets.slice(0, 3);
+}
+
 function calculateSkyData(date: Date, coords: GeoCoords): SkyData {
   const jd = (date.getTime() / 86400000) + 2440587.5;
-  const d = jd - 2451545.0; // days since J2000
+  const d = jd - 2451545.0;
 
-  // 1. Sidereal Time (simplified Greenwich + Local)
   let gmst = 18.697374558 + 24.06570982441908 * d;
-  gmst = gmst % 24;
-  if (gmst < 0) gmst += 24;
-  let lmst = gmst + coords.lng / 15;
-  lmst = lmst % 24;
-  if (lmst < 0) lmst += 24;
+  gmst = ((gmst % 24) + 24) % 24;
+  let lmst = ((gmst + coords.lng / 15) % 24 + 24) % 24;
 
-  // 2. Sun Position (simplified)
   const q = (280.459 + 0.98564736 * d) % 360;
   const g = ((357.529 + 0.98560028 * d) % 360) * (Math.PI / 180);
   const eclipticLon = (q + 1.915 * Math.sin(g) + 0.020 * Math.sin(2 * g)) * (Math.PI / 180);
-  const epsilon = (23.439 - 0.00000036 * d) * (Math.PI / 180); // obliquity of ecliptic
+  const epsilon = (23.439 - 0.00000036 * d) * (Math.PI / 180);
 
   let ra = Math.atan2(Math.cos(epsilon) * Math.sin(eclipticLon), Math.cos(eclipticLon));
   let dec = Math.asin(Math.sin(epsilon) * Math.sin(eclipticLon));
-  
-  ra = (ra * 180 / Math.PI) / 15; // hours
-  if (ra < 0) ra += 24;
+  ra = (((ra * 180 / Math.PI) / 15) + 24) % 24;
 
-  const ha = (lmst - ra) * 15 * (Math.PI / 180); // hour angle in radians
+  const ha = (lmst - ra) * 15 * (Math.PI / 180);
   const latRad = coords.lat * (Math.PI / 180);
 
   let sunAlt = Math.asin(Math.sin(latRad) * Math.sin(dec) + Math.cos(latRad) * Math.cos(dec) * Math.cos(ha));
-  let sunAz = Math.atan2(
-    -Math.sin(ha),
-    Math.cos(latRad) * Math.tan(dec) - Math.sin(latRad) * Math.cos(ha)
-  );
-
+  let sunAz = Math.atan2(-Math.sin(ha), Math.cos(latRad) * Math.tan(dec) - Math.sin(latRad) * Math.cos(ha));
   sunAlt = sunAlt * (180 / Math.PI);
-  sunAz = (sunAz * (180 / Math.PI) + 360) % 360;
+  sunAz = ((sunAz * (180 / Math.PI)) + 360) % 360;
 
-  // 3. Moon Phase (simplified 29.53 day cycle, 0 = new, 0.5 = full, 1 = new)
   const synodicMonth = 29.53058867;
-  const knownNewMoon = new Date(Date.UTC(2000, 0, 6, 18, 14)).getTime(); // Jan 6 2000
-  const phase = ((date.getTime() - knownNewMoon) / 86400000) % synodicMonth;
-  const phaseRatio = phase / synodicMonth;
-  const moonPhaseOut = phaseRatio < 0 ? phaseRatio + 1 : phaseRatio;
+  const knownNewMoon = new Date(Date.UTC(2000, 0, 6, 18, 14)).getTime();
+  let phase = ((date.getTime() - knownNewMoon) / 86400000) % synodicMonth;
+  const moonPhaseOut = ((phase / synodicMonth) + 1) % 1;
 
-  // 4. Day length estimation
-  const declRad = dec; // already radians
-  const p = -0.0145; // roughly -0.83 deg for sun atmospheric refraction
-  const cosW0 = (Math.sin(p) - Math.sin(latRad) * Math.sin(declRad)) / (Math.cos(latRad) * Math.cos(declRad));
-  let dayLength = 12; // default equinox
-  if (cosW0 >= 1) dayLength = 0; // polar night
-  else if (cosW0 <= -1) dayLength = 24; // midnight sun
+  const cosW0 = (Math.sin(-0.0145) - Math.sin(latRad) * Math.sin(dec)) / (Math.cos(latRad) * Math.cos(dec));
+  let dayLength = 12;
+  if (cosW0 >= 1) dayLength = 0;
+  else if (cosW0 <= -1) dayLength = 24;
   else dayLength = (Math.acos(cosW0) * 180 / Math.PI) / 15 * 2;
+
+  const isTwilight = sunAlt > -18 && sunAlt <= 0;
 
   return {
     sunAltitude: sunAlt,
     sunAzimuth: sunAz,
     moonPhase: moonPhaseOut,
+    moonPhaseName: getMoonPhaseName(moonPhaseOut),
     siderealTime: lmst,
     dayLengthHr: dayLength,
-    isDay: sunAlt > -0.83 // accounting for refraction
+    isDay: sunAlt > -0.83,
+    isTwilight,
+    visiblePlanets: getVisiblePlanets(date),
   };
 }
 
 /* ------------------------------------------------------------------ */
-/* Starfield Canvas Component                                         */
+/* Premium Sky Visualization Panel                                     */
 /* ------------------------------------------------------------------ */
 
-function SkyCanvas({ data, mode }: { data: SkyData, mode: "past" | "future" }) {
-  const { isDay, sunAltitude } = data;
-  const isTwilight = sunAltitude > -18 && sunAltitude <= 0;
-  
-  // Theme gradients based on mode and time of day
-  const skyBackground = useMemo(() => {
-    if (isDay) {
-      return mode === "past" 
-        ? "linear-gradient(to bottom, #d4a373, #faedcd)" // Sepia day
-        : "linear-gradient(to bottom, #48cae4, #ade8f4)"; // Cyan day
-    } else if (isTwilight) {
+function SkyVisualization({ data, mode, activeDate }: { data: SkyData; mode: "past" | "future"; activeDate: Date }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  // Sky gradient based on conditions
+  const skyGradient = useMemo(() => {
+    if (data.isDay) {
       return mode === "past"
-        ? "linear-gradient(to bottom, #2b2d42, #8d99ae, #ef233c)" // Reddish twilight
-        : "linear-gradient(to bottom, #03045e, #0077b6, #00b4d8)"; // Electric twilight
+        ? ["#c9a227", "#e8c97a", "#fef3c7"]
+        : ["#0369a1", "#0ea5e9", "#7dd3fc"];
+    } else if (data.isTwilight) {
+      return mode === "past"
+        ? ["#1e1b4b", "#7c3aed", "#f97316"]
+        : ["#0c1445", "#1d4ed8", "#06b6d4"];
     } else {
       return mode === "past"
-        ? "linear-gradient(to bottom, #000000, #14110F)" // Deep void
-        : "linear-gradient(to bottom, #050517, #1b1b3a)"; // Violet void
+        ? ["#000000", "#0a0a1a", "#1a1025"]
+        : ["#050517", "#0f0f3d", "#1b1b5a"];
     }
-  }, [isDay, isTwilight, mode]);
+  }, [data.isDay, data.isTwilight, mode]);
+
+  // Draw stars on canvas
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || data.isDay) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    canvas.width = canvas.offsetWidth;
+    canvas.height = canvas.offsetHeight;
+
+    const starCount = data.isTwilight ? 40 : 200;
+    for (let i = 0; i < starCount; i++) {
+      const x = Math.random() * canvas.width;
+      const y = Math.random() * canvas.height * 0.8;
+      const r = Math.random() * 1.5 + 0.3;
+      const alpha = Math.random() * 0.8 + 0.2;
+
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fillStyle = mode === "past"
+        ? `rgba(255, 220, 180, ${alpha * (data.isTwilight ? 0.3 : 1)})`
+        : `rgba(200, 230, 255, ${alpha * (data.isTwilight ? 0.3 : 1)})`;
+      ctx.fill();
+
+      // Occasional larger stars with glow
+      if (r > 1.2) {
+        const grd = ctx.createRadialGradient(x, y, 0, x, y, r * 4);
+        grd.addColorStop(0, `rgba(255,255,255,0.3)`);
+        grd.addColorStop(1, "rgba(255,255,255,0)");
+        ctx.beginPath();
+        ctx.arc(x, y, r * 4, 0, Math.PI * 2);
+        ctx.fillStyle = grd;
+        ctx.fill();
+      }
+    }
+  }, [data.isDay, data.isTwilight, mode]);
+
+  // Sun/moon position mapping
+  const sunX = (data.sunAzimuth / 360) * 100;
+  const sunY = Math.max(5, Math.min(90, 50 - (data.sunAltitude / 90) * 40));
+  const orbVisible = data.sunAltitude > -20;
 
   return (
-    <div className="absolute inset-0 transition-colors duration-1000 ease-in-out" style={{ background: skyBackground }}>
-      {/* Stars - visible at night/twilight */}
+    <div className="relative w-full h-full overflow-hidden rounded-2xl" style={{ minHeight: 320 }}>
+      {/* Sky gradient background */}
+      <motion.div
+        key={skyGradient.join(",")}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 1.2, ease: "easeInOut" }}
+        className="absolute inset-0"
+        style={{
+          background: `linear-gradient(to bottom, ${skyGradient[0]} 0%, ${skyGradient[1]} 50%, ${skyGradient[2]} 100%)`,
+        }}
+      />
+
+      {/* Star canvas */}
+      {!data.isDay && (
+        <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
+      )}
+
+      {/* Horizon line */}
+      <div className="absolute bottom-[22%] left-0 right-0 h-px opacity-20 bg-white" />
+
+      {/* Ground */}
+      <div
+        className="absolute bottom-0 left-0 right-0 h-[22%] opacity-80"
+        style={{
+          background: data.isDay
+            ? "linear-gradient(to bottom, rgba(74,120,50,0.6), rgba(30,60,20,0.9))"
+            : "linear-gradient(to bottom, rgba(10,15,30,0.8), rgba(0,0,0,0.95))",
+        }}
+      />
+
+      {/* Atmosphere glow (twilight) */}
+      {data.isTwilight && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="absolute bottom-[22%] left-0 right-0 h-24 pointer-events-none"
+          style={{
+            background: mode === "past"
+              ? "linear-gradient(to top, rgba(249,115,22,0.4), transparent)"
+              : "linear-gradient(to top, rgba(6,182,212,0.3), transparent)",
+          }}
+        />
+      )}
+
+      {/* Sun or Moon orb */}
       <AnimatePresence>
-        {(!isDay) && (
-          <motion.div 
-            initial={{ opacity: 0 }} 
-            animate={{ opacity: isTwilight ? 0.3 : 1 }} 
+        {orbVisible && (
+          <motion.div
+            key={`orb-${data.sunAzimuth.toFixed(0)}`}
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: Math.max(0.1, (data.sunAltitude + 20) / 50), scale: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 1 }}
-            className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/stardust.png')] opacity-60"
-            style={{ 
-              filter: mode === "past" ? "sepia(0.5) hue-rotate(-30deg)" : "hue-rotate(60deg) brightness(1.2)"
+            transition={{ duration: 1.5, ease: "easeOut" }}
+            className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full pointer-events-none"
+            style={{
+              left: `${sunX}%`,
+              top: `${sunY}%`,
+              width: data.isDay ? 70 : 48,
+              height: data.isDay ? 70 : 48,
+              background: data.isDay
+                ? "radial-gradient(circle, #fff 10%, rgba(255,240,150,0.6) 50%, transparent 75%)"
+                : "radial-gradient(circle, #e8eaff 20%, rgba(200,210,255,0.3) 60%, transparent 80%)",
+              boxShadow: data.isDay
+                ? "0 0 80px 30px rgba(255,220,100,0.4), 0 0 200px 80px rgba(255,200,50,0.15)"
+                : "0 0 30px 10px rgba(180,190,255,0.2)",
             }}
           />
         )}
       </AnimatePresence>
 
-      {/* Sun/Moon Orb */}
-      <div 
-        className="absolute w-32 h-32 rounded-full transition-all duration-[1500ms] ease-out -translate-x-1/2 -translate-y-1/2"
-        style={{
-          left: `${(data.sunAzimuth / 360) * 100}%`,
-          top: `${100 - ((data.sunAltitude + 90) / 180) * 100}%`, // Rough visual mapping
-          background: isDay 
-            ? "radial-gradient(circle, #fff 20%, rgba(255,255,255,0) 70%)"
-            : "radial-gradient(circle, #e2e8f0 30%, rgba(226,232,240,0) 80%)",
-          boxShadow: isDay ? "0 0 100px 40px rgba(255,255,255,0.4)" : "0 0 40px 10px rgba(200,200,255,0.1)",
-          opacity: Math.max(0, (data.sunAltitude + 20) / 40) // Fade out below horizon
-        }}
-      />
+      {/* Constellation hints at night */}
+      {!data.isDay && !data.isTwilight && (
+        <div className="absolute inset-0 pointer-events-none flex items-center justify-center opacity-15">
+          <svg viewBox="0 0 400 200" className="w-full h-full absolute top-0 left-0">
+            {/* Orion belt */}
+            <circle cx="160" cy="80" r="1.5" fill="white" />
+            <circle cx="175" cy="76" r="1.5" fill="white" />
+            <circle cx="190" cy="80" r="1.5" fill="white" />
+            <line x1="160" y1="80" x2="175" y2="76" stroke="white" strokeWidth="0.5" />
+            <line x1="175" y1="76" x2="190" y2="80" stroke="white" strokeWidth="0.5" />
+            {/* Big Dipper */}
+            <circle cx="280" cy="60" r="1.2" fill="white" />
+            <circle cx="295" cy="55" r="1.2" fill="white" />
+            <circle cx="310" cy="58" r="1.2" fill="white" />
+            <circle cx="320" cy="70" r="1.2" fill="white" />
+            <circle cx="315" cy="82" r="1.2" fill="white" />
+            <circle cx="305" cy="88" r="1.2" fill="white" />
+            <circle cx="295" cy="85" r="1.2" fill="white" />
+            <line x1="280" y1="60" x2="295" y2="55" stroke="white" strokeWidth="0.4" />
+            <line x1="295" y1="55" x2="310" y2="58" stroke="white" strokeWidth="0.4" />
+            <line x1="310" y1="58" x2="320" y2="70" stroke="white" strokeWidth="0.4" />
+            <line x1="320" y1="70" x2="315" y2="82" stroke="white" strokeWidth="0.4" />
+            <line x1="315" y1="82" x2="305" y2="88" stroke="white" strokeWidth="0.4" />
+            <line x1="305" y1="88" x2="295" y2="85" stroke="white" strokeWidth="0.4" />
+          </svg>
+        </div>
+      )}
+
+      {/* HUD Overlays */}
+      {/* Time indicator top center */}
+      <div className="absolute top-4 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1">
+        <span
+          className="rounded-full px-3 py-1 font-mono text-[10px] uppercase tracking-widest border backdrop-blur-sm"
+          style={{
+            borderColor: data.isDay ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.15)",
+            backgroundColor: "rgba(0,0,0,0.3)",
+            color: data.isDay ? "rgba(255,255,255,0.9)" : "rgba(200,230,255,0.9)",
+          }}
+        >
+          {data.isDay ? "☀️ Day" : data.isTwilight ? "🌆 Twilight" : "🌙 Night"}
+        </span>
+      </div>
+
+      {/* Compass bottom center */}
+      <div className="absolute bottom-[25%] right-4 flex flex-col items-center gap-0.5">
+        <div
+          className="rounded-full w-8 h-8 flex items-center justify-center border backdrop-blur-sm"
+          style={{ borderColor: "rgba(255,255,255,0.2)", backgroundColor: "rgba(0,0,0,0.4)" }}
+        >
+          <svg viewBox="0 0 24 24" width="14" fill="none" stroke="currentColor" strokeWidth="1.5"
+            style={{ color: "white", transform: `rotate(${data.sunAzimuth}deg)` }}>
+            <path d="M12 2L8 12h8L12 2z" fill="rgba(251,191,36,0.7)" stroke="none" />
+            <path d="M12 22L16 12H8l4 10z" fill="rgba(100,116,139,0.5)" stroke="none" />
+          </svg>
+        </div>
+        <span className="font-mono text-[8px] text-white/50">N</span>
+      </div>
+
+      {/* Mode badge top-right */}
+      <div className="absolute top-4 right-4">
+        <span
+          className="rounded-full px-2 py-1 font-mono text-[9px] uppercase tracking-widest backdrop-blur-sm border"
+          style={{
+            color: mode === "past" ? "#fbbf24" : "#a78bfa",
+            borderColor: mode === "past" ? "rgba(251,191,36,0.3)" : "rgba(167,139,250,0.3)",
+            backgroundColor: mode === "past" ? "rgba(251,191,36,0.1)" : "rgba(167,139,250,0.1)",
+          }}
+        >
+          {mode === "past" ? "● Historical" : "● Future"}
+        </span>
+      </div>
     </div>
   );
 }
 
 /* ------------------------------------------------------------------ */
-/* Number Ticker Component                                            */
+/* Metric Row Component                                                */
 /* ------------------------------------------------------------------ */
-function TickerValue({ value, unit }: { value: string | number, unit?: string }) {
+
+function MetricRow({ label, value, unit }: { label: string; value: string; unit?: string }) {
   return (
-    <div className="flex items-baseline gap-1 overflow-hidden">
-      <motion.span 
-        key={value}
-        initial={{ y: 20, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        className="font-mono text-2xl font-bold text-slate-100"
-      >
-        {value}
-      </motion.span>
-      {unit && <span className="font-mono text-[10px] text-slate-500">{unit}</span>}
+    <div className="flex items-center justify-between py-2.5 border-b border-white/5 last:border-0">
+      <span className="font-mono text-[10px] uppercase tracking-wider text-slate-500">{label}</span>
+      <div className="flex items-baseline gap-1">
+        <motion.span
+          key={value}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3 }}
+          className="font-mono text-sm font-semibold text-slate-100"
+        >
+          {value}
+        </motion.span>
+        {unit && <span className="font-mono text-[9px] text-slate-500">{unit}</span>}
+      </div>
     </div>
   );
 }
 
 /* ------------------------------------------------------------------ */
-/* Main Page                                                          */
+/* Main Page                                                           */
 /* ------------------------------------------------------------------ */
 
 export default function SkyTimeMachine() {
-  // Inputs
-  const [lat, setLat] = useState(19.0760); // Mumbai
+  const [lat, setLat] = useState(19.0760);
   const [lng, setLng] = useState(72.8777);
-  const [baseDate, setBaseDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [locationName, setLocationName] = useState("Mumbai");
+  const [baseDate, setBaseDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [baseTime, setBaseTime] = useState("12:00");
-  
-  // Scrubber State
   const [offsetYears, setOffsetYears] = useState(0);
   const [activeDate, setActiveDate] = useState<Date>(new Date());
-  
-  // Data
   const [skyData, setSkyData] = useState<SkyData | null>(null);
-  
-  // Animation/Transition trigger
   const [transitionKey, setTransitionKey] = useState(0);
 
   const mode = offsetYears < 0 ? "past" : "future";
 
-  // When form inputs change, recalculate base active date
   useEffect(() => {
-    const dateStr = `${baseDate}T${baseTime}:00`;
-    const d = new Date(dateStr);
+    const d = new Date(`${baseDate}T${baseTime}:00`);
     if (!isNaN(d.getTime())) {
-      // Apply scrubber offset
-      const updated = new Date(d);
-      updated.setFullYear(updated.getFullYear() + offsetYears);
-      setActiveDate(updated);
-      setSkyData(calculateSkyData(updated, { lat, lng }));
+      d.setFullYear(d.getFullYear() + offsetYears);
+      setActiveDate(d);
+      setSkyData(calculateSkyData(d, { lat, lng }));
     }
   }, [baseDate, baseTime, lat, lng, offsetYears]);
 
-  // Handle Scrub
   const handleScrub = (val: number) => {
     setOffsetYears(val);
-    setTransitionKey(prev => prev + 1);
-  };
-
-  const setLocation = (l: number, lg: number) => {
-    setLat(l);
-    setLng(lg);
+    setTransitionKey(p => p + 1);
   };
 
   return (
-    <main className="flex-1 page-with-nav relative flex overflow-hidden bg-[#03040a]">
-      
-      {/* ── Sky Visualization Background ── */}
-      <div className="absolute inset-0 z-0">
-        {skyData && <SkyCanvas data={skyData} mode={mode} />}
-        
-        {/* Warp Transition Effect on scrub */}
-        <AnimatePresence>
-          <motion.div
-            key={`warp-${transitionKey}`}
-            initial={{ opacity: 1, scale: 0.95 }}
-            animate={{ opacity: 0, scale: 1.1 }}
-            transition={{ duration: 0.5, ease: "easeOut" }}
-            className="absolute inset-0 z-10 bg-white/10 pointer-events-none mix-blend-overlay"
-          />
+    <main className="flex-1 page-with-nav flex flex-col overflow-hidden" style={{ background: "#030409" }}>
+
+      {/* ── Title bar ── */}
+      <div className="flex items-center justify-between px-6 py-3 border-b border-white/5 backdrop-blur-xl bg-slate-950/60">
+        <div className="flex items-center gap-3">
+          <span className="text-lg">⏳</span>
+          <div>
+            <h1 className="font-mono text-sm uppercase tracking-widest text-white">Sky Time Machine</h1>
+            <p className="font-mono text-[10px] text-slate-500 uppercase tracking-wider">
+              {locationName} · {activeDate.getFullYear()}
+            </p>
+          </div>
+        </div>
+        <AnimatePresence mode="wait">
+          <motion.span
+            key={mode}
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 8 }}
+            className="rounded-full px-3 py-1 font-mono text-[10px] uppercase tracking-widest border"
+            style={{
+              color: mode === "past" ? "#fbbf24" : "#a78bfa",
+              borderColor: mode === "past" ? "rgba(251,191,36,0.3)" : "rgba(167,139,250,0.3)",
+              backgroundColor: mode === "past" ? "rgba(251,191,36,0.08)" : "rgba(167,139,250,0.08)",
+            }}
+          >
+            {mode === "past" ? "◀ Historical Mode" : "▶ Future Mode"}
+          </motion.span>
         </AnimatePresence>
       </div>
 
-      {/* ── Left Input Panel ── */}
-      <div className="relative z-20 flex w-full max-w-sm flex-col border-r border-white/10 bg-slate-950/60 p-6 backdrop-blur-2xl">
-        <div className="mb-8">
-          <h1 className="font-mono text-lg uppercase tracking-[0.2em] text-white flex items-center gap-2">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-sky-400">
-              <circle cx="12" cy="12" r="10"/><path d="M12 2v20M2 12h20"/>
-            </svg>
-            Sky Time Machine
-          </h1>
-          <p className="mt-2 font-sans text-xs text-slate-400">
-            Reconstruct celestial alignments from the distant past or project them into the future.
-          </p>
-        </div>
+      {/* ── Main layout ── */}
+      <div className="flex flex-col lg:flex-row flex-1 overflow-hidden min-h-0">
 
-        <div className="flex flex-col gap-5 flex-1">
-          {/* Coordinates */}
-          <LocationSearch 
-            defaultQuery="Mumbai"
-            onLocationSelect={(l, lg) => setLocation(l, lg)}
-          />
+        {/* Left Control Panel */}
+        <div className="flex w-full lg:w-[300px] shrink-0 flex-col border-r border-white/5 bg-slate-950/70 backdrop-blur-2xl overflow-y-auto">
+          <div className="p-5 flex flex-col gap-4 flex-1">
 
-          <hr className="border-white/5 my-2" />
+            {/* Location */}
+            <div>
+              <p className="mb-2 font-mono text-[9px] uppercase tracking-widest text-slate-500">📍 Observation Site</p>
+              <LocationSearch
+                defaultQuery="Mumbai"
+                onLocationSelect={(l, lo, name) => {
+                  setLat(l);
+                  setLng(lo);
+                  if (name) setLocationName(name);
+                }}
+              />
+            </div>
 
-          {/* Date & Time */}
-          <div>
-            <label className="mb-1 block font-mono text-[9px] uppercase tracking-wider text-slate-500">Base Date</label>
-            <input 
-              type="date" value={baseDate} onChange={e => setBaseDate(e.target.value)}
-              className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 font-mono text-sm text-slate-200 outline-none [color-scheme:dark]"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block font-mono text-[9px] uppercase tracking-wider text-slate-500">Base Time (Local)</label>
-            <input 
-              type="time" value={baseTime} onChange={e => setBaseTime(e.target.value)}
-              className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 font-mono text-sm text-slate-200 outline-none [color-scheme:dark]"
-            />
-          </div>
-        </div>
-      </div>
+            <div className="h-px bg-white/5" />
 
-      {/* ── Right Telemetry HUD ── */}
-      <div className="absolute right-6 top-24 z-20 w-64 pointer-events-none hidden md:block">
-        <div className="flex flex-col gap-3">
-          <div className="rounded-xl border border-white/10 bg-slate-950/70 p-4 backdrop-blur-md">
-            <h3 className="font-mono text-[10px] uppercase tracking-widest text-sky-400 mb-4 flex items-center gap-2">
-              <span className="h-1.5 w-1.5 rounded-full bg-sky-400 animate-pulse"/> Current Epoch
-            </h3>
-            <p className="font-mono text-sm text-white mb-1">{activeDate.toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}</p>
-            <p className="font-mono text-xs text-slate-400">{activeDate.toLocaleTimeString()}</p>
-          </div>
-
-          {skyData && (
-            <div className="rounded-xl border border-white/10 bg-slate-950/70 p-4 backdrop-blur-md grid grid-cols-2 gap-y-4 gap-x-2">
+            {/* Date & Time */}
+            <div className="grid grid-cols-2 gap-3">
               <div>
-                <p className="font-mono text-[9px] uppercase tracking-wider text-slate-500 mb-0.5">Sun Alt</p>
-                <TickerValue value={skyData.sunAltitude.toFixed(1)} unit="°" />
+                <label className="mb-1.5 block font-mono text-[9px] uppercase tracking-wider text-slate-500">📅 Date</label>
+                <input
+                  type="date"
+                  value={baseDate}
+                  onChange={e => setBaseDate(e.target.value)}
+                  className="w-full rounded-xl border border-white/10 bg-black/50 px-3 py-2.5 font-mono text-xs text-slate-200 outline-none focus:border-sky-400/40 transition-colors [color-scheme:dark]"
+                />
               </div>
               <div>
-                <p className="font-mono text-[9px] uppercase tracking-wider text-slate-500 mb-0.5">Sun Az</p>
-                <TickerValue value={skyData.sunAzimuth.toFixed(1)} unit="°" />
-              </div>
-              <div>
-                <p className="font-mono text-[9px] uppercase tracking-wider text-slate-500 mb-0.5">Sidereal Time</p>
-                <TickerValue value={skyData.siderealTime.toFixed(2)} unit="hr" />
-              </div>
-              <div>
-                <p className="font-mono text-[9px] uppercase tracking-wider text-slate-500 mb-0.5">Moon Phase</p>
-                <TickerValue value={(skyData.moonPhase * 100).toFixed(0)} unit="%" />
+                <label className="mb-1.5 block font-mono text-[9px] uppercase tracking-wider text-slate-500">🕐 Time</label>
+                <input
+                  type="time"
+                  value={baseTime}
+                  onChange={e => setBaseTime(e.target.value)}
+                  className="w-full rounded-xl border border-white/10 bg-black/50 px-3 py-2.5 font-mono text-xs text-slate-200 outline-none focus:border-sky-400/40 transition-colors [color-scheme:dark]"
+                />
               </div>
             </div>
-          )}
+
+            <div className="h-px bg-white/5" />
+
+            {/* Sky Data Metrics */}
+            {skyData && (
+              <div>
+                <p className="mb-2 font-mono text-[9px] uppercase tracking-widest text-slate-500">📊 Sky Telemetry</p>
+                <div className="rounded-xl border border-white/5 bg-white/[0.02] px-4">
+                  <MetricRow label="Sun Altitude" value={skyData.sunAltitude.toFixed(1)} unit="°" />
+                  <MetricRow label="Sun Azimuth" value={skyData.sunAzimuth.toFixed(1)} unit="°" />
+                  <MetricRow label="Sidereal Time" value={skyData.siderealTime.toFixed(2)} unit="hr" />
+                  <MetricRow label="Day Length" value={skyData.dayLengthHr.toFixed(1)} unit="hr" />
+                  <MetricRow label="Moon Phase" value={(skyData.moonPhase * 100).toFixed(0)} unit="%" />
+                </div>
+              </div>
+            )}
+
+            {/* Moon Phase Card */}
+            {skyData && (
+              <div className="rounded-xl border border-white/5 bg-white/[0.02] p-4">
+                <p className="mb-2 font-mono text-[9px] uppercase tracking-widest text-slate-500">🌙 Lunar Phase</p>
+                <p className="text-sm font-medium text-slate-200">{skyData.moonPhaseName}</p>
+                <div className="mt-2 h-1.5 w-full rounded-full bg-white/5 overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-slate-400 to-white transition-all duration-500"
+                    style={{ width: `${skyData.moonPhase * 100}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Visible Planets */}
+            {skyData && skyData.visiblePlanets.length > 0 && (
+              <div className="rounded-xl border border-white/5 bg-white/[0.02] p-4">
+                <p className="mb-2 font-mono text-[9px] uppercase tracking-widest text-slate-500">🔭 Visible Planets</p>
+                <div className="flex flex-wrap gap-2">
+                  {skyData.visiblePlanets.map(p => (
+                    <span
+                      key={p}
+                      className="rounded-full border border-violet-400/20 bg-violet-400/10 px-2.5 py-1 font-mono text-[10px] text-violet-300"
+                    >
+                      {p}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Center: Sky Canvas */}
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+
+          {/* Sky Visualization */}
+          <div className="relative flex-1 min-h-[300px] lg:min-h-0">
+            <AnimatePresence mode="wait">
+              {skyData ? (
+                <motion.div
+                  key={`sky-${transitionKey}`}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.6 }}
+                  className="absolute inset-0"
+                >
+                  <SkyVisualization data={skyData} mode={mode} activeDate={activeDate} />
+
+                  {/* Warp flash on scrub */}
+                  <motion.div
+                    key={`warp-${transitionKey}`}
+                    initial={{ opacity: 0.4 }}
+                    animate={{ opacity: 0 }}
+                    transition={{ duration: 0.5, ease: "easeOut" }}
+                    className="pointer-events-none absolute inset-0 bg-white mix-blend-overlay"
+                  />
+                </motion.div>
+              ) : (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="absolute inset-0 flex items-center justify-center bg-slate-950"
+                >
+                  <div className="text-center">
+                    <div className="relative mx-auto mb-4 h-12 w-12">
+                      <span className="absolute inset-0 animate-spin rounded-full border-2 border-violet-500/10 border-t-violet-400" />
+                    </div>
+                    <p className="font-mono text-xs uppercase tracking-widest text-slate-500">Calculating sky...</p>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Epoch info — top left */}
+            {skyData && (
+              <div className="absolute top-4 left-4 z-10">
+                <div className="rounded-xl border border-white/10 bg-black/50 px-3 py-2 backdrop-blur-md">
+                  <p className="font-mono text-[10px] uppercase tracking-wider text-slate-400">Epoch</p>
+                  <p className="font-mono text-sm font-semibold text-white">
+                    {activeDate.toLocaleDateString(undefined, { weekday: "short", year: "numeric", month: "short", day: "numeric" })}
+                  </p>
+                  <p className="font-mono text-[10px] text-slate-400">{activeDate.toLocaleTimeString()}</p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Bottom Scrubber */}
+          <div className="border-t border-white/5 bg-slate-950/80 backdrop-blur-xl p-5">
+            <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-black/40 p-5">
+              {/* Mode glow */}
+              <div
+                className="pointer-events-none absolute inset-0 opacity-10 transition-all duration-1000"
+                style={{
+                  background: mode === "past"
+                    ? "linear-gradient(to right, transparent, rgba(251,191,36,0.4))"
+                    : "linear-gradient(to right, transparent, rgba(167,139,250,0.4))",
+                }}
+              />
+
+              <div className="relative z-10 flex items-center justify-between mb-3">
+                <div>
+                  <p className="font-mono text-[10px] uppercase tracking-widest text-slate-500">
+                    Temporal Offset Scrubber
+                  </p>
+                  <motion.p
+                    key={offsetYears}
+                    initial={{ opacity: 0, x: -8 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    className="font-mono text-xl font-black text-white mt-0.5"
+                  >
+                    {offsetYears === 0
+                      ? "Present"
+                      : offsetYears > 0
+                      ? `+${offsetYears} years into the future`
+                      : `${offsetYears} years into the past`}
+                  </motion.p>
+                </div>
+                <div className="text-right hidden sm:block">
+                  <p className="font-mono text-[9px] uppercase tracking-widest text-slate-600">Target Year</p>
+                  <motion.p
+                    key={activeDate.getFullYear()}
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="font-mono text-2xl font-black"
+                    style={{ color: mode === "past" ? "#fbbf24" : "#a78bfa" }}
+                  >
+                    {activeDate.getFullYear()}
+                  </motion.p>
+                </div>
+              </div>
+
+              <div className="relative z-10 flex items-center gap-4">
+                <span className="font-mono text-[10px] text-amber-400/70 whitespace-nowrap">◀ -100y</span>
+                <input
+                  type="range"
+                  min="-100"
+                  max="100"
+                  step="1"
+                  value={offsetYears}
+                  onChange={e => handleScrub(Number(e.target.value))}
+                  className="zenith-scrubber flex-1"
+                />
+                <span className="font-mono text-[10px] text-violet-400/70 whitespace-nowrap">+100y ▶</span>
+              </div>
+
+              {/* Year ticks */}
+              <div className="relative z-10 flex justify-between px-3 mt-1">
+                {[-100, -50, 0, 50, 100].map(y => (
+                  <button
+                    key={y}
+                    onClick={() => handleScrub(y)}
+                    className="font-mono text-[8px] text-slate-600 hover:text-slate-300 transition-colors cursor-pointer"
+                  >
+                    {y > 0 ? `+${y}` : y}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-
-      {/* ── Bottom Scrubber HUD ── */}
-      <div className="absolute bottom-6 left-[400px] right-6 z-20">
-        <div className="rounded-2xl border border-white/10 bg-slate-950/80 p-5 backdrop-blur-xl shadow-2xl relative overflow-hidden">
-          {/* Mode Badge background glow */}
-          <div className={`absolute top-0 right-0 w-64 h-full bg-gradient-to-l opacity-20 pointer-events-none transition-colors duration-1000 ${
-            mode === "past" ? "from-amber-500" : "from-violet-500"
-          }`} />
-
-          <div className="flex items-center justify-between mb-4 relative z-10">
-            <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-slate-400">Temporal Offset Scrubber</span>
-            <span className={`rounded-full px-3 py-1 font-mono text-[9px] uppercase tracking-widest border transition-colors ${
-              mode === "past" 
-                ? "border-amber-500/30 bg-amber-500/10 text-amber-400" 
-                : "border-violet-500/30 bg-violet-500/10 text-violet-400"
-            }`}>
-              {mode === "past" ? "Historical Mode" : "Future Mode"}
-            </span>
-          </div>
-
-          <div className="flex items-center gap-4 relative z-10">
-            <span className="font-mono text-xs text-slate-500 w-12 text-right">-100y</span>
-            <input 
-              type="range" 
-              min="-100" max="100" step="1"
-              value={offsetYears}
-              onChange={e => handleScrub(Number(e.target.value))}
-              className="zenith-scrubber flex-1"
-            />
-            <span className="font-mono text-xs text-slate-500 w-12">+100y</span>
-          </div>
-          
-          <div className="mt-3 text-center relative z-10">
-            <span className="font-mono text-sm font-semibold text-white">
-              {offsetYears > 0 ? "+" : ""}{offsetYears} Years
-            </span>
-          </div>
-        </div>
-      </div>
-
     </main>
   );
 }
