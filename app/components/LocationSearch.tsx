@@ -110,7 +110,13 @@ export function LocationSearch({
   };
 
   return (
-    <div className="relative w-full" ref={wrapperRef}>
+    <div
+      className="relative w-full"
+      ref={wrapperRef}
+      onPointerDown={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+      onTouchStart={(e) => e.stopPropagation()}
+    >
       <label className="mb-1 block font-mono text-[9px] uppercase tracking-wider text-slate-500">
         Location Search
       </label>
@@ -156,7 +162,11 @@ export function LocationSearch({
             initial={{ opacity: 0, y: -5 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -5 }}
-            onPointerDown={(event) => event.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+            onScroll={(e) => e.stopPropagation()}
+            onWheel={(e) => e.stopPropagation()}
             className="absolute z-50 mt-2 w-full rounded-lg border border-white/10 bg-slate-900/95 shadow-xl backdrop-blur-xl max-h-60 overflow-y-auto"
           >
             {results.map((r, i) => (

@@ -417,13 +417,22 @@ export default function GlobePage() {
           setMissionTasks(prev => prev.map(t => t.id === "iss" ? { ...t, done: true } : t));
         }
 
-        viewer.camera.flyToBoundingSphere(new Cesium.BoundingSphere(cartesian, 0), {
-          offset: new Cesium.HeadingPitchRange(
-            Cesium.Math.toRadians(0),
-            Cesium.Math.toRadians(-35),
-            1200000
+        // Reset any locked tracking constraints first
+        viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+
+        // Fly to a point 12 km above the clicked coordinates and tilt UP to look at space
+        viewer.camera.flyTo({
+          destination: Cesium.Cartesian3.fromDegrees(
+            geographic.longitude,
+            geographic.latitude,
+            12000 // 12 km altitude
           ),
-          duration: 1.8,
+          orientation: {
+            heading: Cesium.Math.toRadians(0),
+            pitch: Cesium.Math.toRadians(35), // Tilt 35 degrees up from local horizon to show sky/stars
+            roll: 0.0
+          },
+          duration: 2.2,
           easingFunction: Cesium.EasingFunction.QUADRATIC_IN_OUT,
         });
       };
@@ -694,6 +703,10 @@ export default function GlobePage() {
     setSelected(null);
     setSelectedSatellite(null);
     setAutoRotate(true);
+    
+    // Reset any locked camera tracking transforms
+    viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+
     viewer.camera.flyTo({
       destination: Cesium.Cartesian3.fromDegrees(0, 0, 22_000_000),
       duration: 1.6,
@@ -786,14 +799,19 @@ export default function GlobePage() {
               <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
               <path d="M3 3v5h5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
-            Reset
+            Reset View
           </button>
         </div>
       </div>
 
-      {/* ── Left Side: Mission Checklist Panel ── */}
-      {isMissionMode && (
-        <div className="absolute top-24 left-6 z-20 w-80 pointer-events-auto animate-[fadeIn_0.3s_ease-out]">
+      {/* ── Left Side: Controls, Location & Mission Checklist ── */}
+      <div className="absolute top-24 left-6 z-20 w-80 max-h-[calc(100vh-6rem)] overflow-y-auto pointer-events-auto flex flex-col gap-4 hidden lg:flex">
+        <div className="rounded-2xl border border-white/10 bg-slate-950/70 p-4 backdrop-blur-xl">
+          <LocationSearch showCurrentLocation />
+        </div>
+
+        {/* ── Left Side: Mission Checklist Panel ── */}
+        {isMissionMode && (
           <div className="relative overflow-hidden rounded-2xl border border-emerald-500/20 bg-slate-950/85 p-5 shadow-[0_12px_40px_rgba(0,0,0,0.7)] backdrop-blur-xl">
             <div className="absolute top-0 right-0 h-[2px] bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-500" style={{ width: `${missionProgress}%` }} />
             
@@ -832,23 +850,17 @@ export default function GlobePage() {
               </div>
             )}
           </div>
-        </div>
-      )}
-
-      {/* ── Left Side: Controls + Location ── */}
-      <div className="absolute top-24 left-6 z-20 w-72 max-h-[calc(100vh-6rem)] overflow-y-auto pointer-events-auto flex flex-col gap-4 hidden lg:flex">
-        <div className="rounded-2xl border border-white/10 bg-slate-950/70 p-4 backdrop-blur-xl">
-          <LocationSearch showCurrentLocation />
-        </div>
+        )}
       </div>
 
-      {/* ── Right Side: Space Event Stream + Simulation Timeline ── */}
-      <div className="absolute top-24 right-6 z-20 w-80 pointer-events-auto max-h-[calc(100vh-6rem)] flex flex-col gap-4 hidden lg:flex">
+      {/* ── Right Side: Space Event Stream, Simulation Timeline, HUD Controls & Presets ── */}
+      <div className="absolute top-24 right-6 z-20 w-80 pointer-events-auto max-h-[calc(100vh-6rem)] flex flex-col gap-4 hidden lg:flex overflow-y-auto pb-6 pr-1 scrollbar-thin">
         <SpaceEventStream />
 
-        <div className="flex-1 min-h-0 relative overflow-hidden rounded-2xl border border-white/10 bg-slate-950/70 shadow-[0_8px_32px_rgba(0,0,0,0.6)] backdrop-blur-xl flex flex-col">
+        {/* Simulation Timeline */}
+        <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-slate-950/70 shadow-[0_8px_32px_rgba(0,0,0,0.6)] backdrop-blur-xl flex flex-col shrink-0">
           <div className="p-4 border-b border-white/5 flex items-center justify-between bg-black/20 shrink-0">
-            <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-slate-200 font-bold">Simulation Timeline</span>
+            <span className="font-mono text-[10px] uppercase tracking-[0.25em] text-slate-200 font-bold">Simulation Timeline</span>
             <span className="font-mono text-[8px] uppercase tracking-wider text-slate-400">Observatory Mode</span>
           </div>
           <div className="p-4 flex flex-col gap-3">
@@ -868,6 +880,116 @@ export default function GlobePage() {
               aria-labelledby="timeline-label"
               className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-sky-500 min-h-[44px]"
             />
+          </div>
+        </div>
+
+        {/* Globe HUD Controls Card */}
+        <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-slate-950/70 p-5 shadow-[0_8px_32px_rgba(0,0,0,0.6)] backdrop-blur-xl shrink-0">
+          <div className="absolute -inset-px rounded-2xl bg-gradient-to-br from-white/5 via-transparent to-white/5 pointer-events-none" />
+
+          <div className="relative flex flex-col gap-4">
+            {/* Constellation Lines Toggle */}
+            <div className="flex items-center justify-between border-t border-white/5 pt-3">
+              <span className="font-mono text-[10px] uppercase tracking-[0.15em] text-slate-400 font-medium">
+                ✨ Constellation Lines
+              </span>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showConstellationOverlay}
+                  onChange={(e) => setShowConstellationOverlay(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-9 h-5 bg-slate-800 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-cyan-500"></div>
+              </label>
+            </div>
+
+            {/* Orbit Trail Toggle */}
+            <div className="flex items-center justify-between border-t border-white/5 pt-3">
+              <span className="font-mono text-[10px] uppercase tracking-[0.15em] text-slate-400 font-medium">
+                🛰 Orbit Trail
+              </span>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showOrbitTrail}
+                  onChange={(e) => setShowOrbitTrail(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-9 h-5 bg-slate-800 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-red-500"></div>
+              </label>
+            </div>
+
+            {/* Satellite Radar Mode Toggle */}
+            <div className="flex items-center justify-between border-t border-white/5 pt-3">
+              <span className="font-mono text-[10px] uppercase tracking-[0.15em] text-slate-400 font-medium">
+                Satellite Radar Mode
+              </span>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showRadar}
+                  onChange={(e) => {
+                    setShowRadar(e.target.checked);
+                    setSelectedSatellite(null);
+                  }}
+                  className="sr-only peer"
+                />
+                <div className="w-9 h-5 bg-slate-800 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-500"></div>
+              </label>
+            </div>
+
+            {/* Auto Rotation */}
+            <div className="flex items-center justify-between border-t border-white/5 pt-3">
+              <span className="font-mono text-[10px] uppercase tracking-[0.15em] text-slate-400 font-medium">
+                Orbit Auto-Rotation
+              </span>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={autoRotate}
+                  onChange={(e) => setAutoRotate(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-9 h-5 bg-slate-800 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-sky-500"></div>
+              </label>
+            </div>
+
+            {/* Orbital Tracking Toggle */}
+            <div className="flex items-center justify-between border-t border-white/5 pt-3">
+              <span className="font-mono text-[10px] uppercase tracking-[0.15em] text-slate-400 font-medium">
+                Orbital Tracking (ISS)
+              </span>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showISS}
+                  onChange={(e) => setShowISS(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-9 h-5 bg-slate-800 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-cyan-500"></div>
+              </label>
+            </div>
+          </div>
+
+          {/* Landmarks Drawer */}
+          <div className="relative mt-4 border-t border-white/5 pt-4">
+            <p className="font-mono text-[10px] uppercase tracking-[0.15em] text-slate-400 font-medium mb-3">
+              Stargazing Presets
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              {STARGAZING_PRESETS.map((preset) => (
+                <PresetButton
+                  key={preset.name}
+                  preset={preset}
+                  viewerRef={viewerRef}
+                  cesiumRef={cesiumRef}
+                  onSelect={(lat, lng, name) => {
+                    setSelected({ latitude: lat, longitude: lng, height: 0 });
+                  }}
+                />
+              ))}
+            </div>
           </div>
         </div>
       </div>
@@ -965,9 +1087,20 @@ export default function GlobePage() {
               <button
                 type="button"
                 onClick={copyToClipboard}
-                className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] py-2 font-mono text-[9px] uppercase tracking-wider text-slate-300 hover:bg-white/[0.08] hover:text-slate-100 transition-all cursor-pointer"
+                className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] py-2 font-mono text-[9px] uppercase tracking-wider text-slate-300 hover:bg-white/[0.08] hover:text-slate-100 transition-all cursor-pointer min-h-[40px]"
               >
                 {copySuccess ? "Copied Telemetry!" : "Copy Telemetry"}
+              </button>
+              <button
+                type="button"
+                onClick={handleResetView}
+                className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-sky-500/20 bg-sky-500/10 hover:bg-sky-500/25 py-2 font-mono text-[9px] uppercase tracking-wider text-sky-300 hover:text-sky-200 transition-all cursor-pointer min-h-[40px]"
+              >
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" className="stroke-current">
+                  <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M3 3v5h5" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+                Reset View
               </button>
             </div>
           </div>
@@ -1035,120 +1168,7 @@ export default function GlobePage() {
         </div>
       )}
 
-      {/* ── Right Side Bottom: Floating Dashboard & Scrubber Controls Card ── */}
-      <div className="pointer-events-none absolute bottom-32 right-6 z-20 flex flex-col gap-4 w-[min(92vw,360px)] hidden lg:flex">
-        {/* Globe HUD Controls Card */}
-        <div className="pointer-events-auto">
-          <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-slate-950/70 p-5 shadow-[0_8px_32px_rgba(0,0,0,0.6)] backdrop-blur-xl">
-            <div className="absolute -inset-px rounded-2xl bg-gradient-to-br from-white/5 via-transparent to-white/5 pointer-events-none" />
 
-            <div className="relative flex flex-col gap-4">
-              {/* Constellation Lines Toggle */}
-              <div className="flex items-center justify-between border-t border-white/5 pt-3">
-                <span className="font-mono text-[10px] uppercase tracking-[0.15em] text-slate-400 font-medium">
-                  ✨ Constellation Lines
-                </span>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={showConstellationOverlay}
-                    onChange={(e) => setShowConstellationOverlay(e.target.checked)}
-                    className="sr-only peer"
-                  />
-                  <div className="w-9 h-5 bg-slate-800 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-cyan-500"></div>
-                </label>
-              </div>
-
-              {/* Orbit Trail Toggle */}
-              <div className="flex items-center justify-between border-t border-white/5 pt-3">
-                <span className="font-mono text-[10px] uppercase tracking-[0.15em] text-slate-400 font-medium">
-                  🛰 Orbit Trail
-                </span>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={showOrbitTrail}
-                    onChange={(e) => setShowOrbitTrail(e.target.checked)}
-                    className="sr-only peer"
-                  />
-                  <div className="w-9 h-5 bg-slate-800 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-red-500"></div>
-                </label>
-              </div>
-
-              {/* Satellite Radar Mode Toggle */}
-              <div className="flex items-center justify-between border-t border-white/5 pt-3">
-                <span className="font-mono text-[10px] uppercase tracking-[0.15em] text-slate-400 font-medium">
-                  Satellite Radar Mode
-                </span>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={showRadar}
-                    onChange={(e) => {
-                      setShowRadar(e.target.checked);
-                      setSelectedSatellite(null);
-                    }}
-                    className="sr-only peer"
-                  />
-                  <div className="w-9 h-5 bg-slate-800 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-500"></div>
-                </label>
-              </div>
-
-              {/* Auto Rotation */}
-              <div className="flex items-center justify-between border-t border-white/5 pt-3">
-                <span className="font-mono text-[10px] uppercase tracking-[0.15em] text-slate-400 font-medium">
-                  Orbit Auto-Rotation
-                </span>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={autoRotate}
-                    onChange={(e) => setAutoRotate(e.target.checked)}
-                    className="sr-only peer"
-                  />
-                  <div className="w-9 h-5 bg-slate-800 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-sky-500"></div>
-                </label>
-              </div>
-
-              {/* Orbital Tracking Toggle */}
-              <div className="flex items-center justify-between border-t border-white/5 pt-3">
-                <span className="font-mono text-[10px] uppercase tracking-[0.15em] text-slate-400 font-medium">
-                  Orbital Tracking (ISS)
-                </span>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={showISS}
-                    onChange={(e) => setShowISS(e.target.checked)}
-                    className="sr-only peer"
-                  />
-                  <div className="w-9 h-5 bg-slate-800 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-cyan-500"></div>
-                </label>
-              </div>
-            </div>
-
-            {/* Landmarks Drawer */}
-            <div className="relative mt-4 border-t border-white/5 pt-4">
-              <p className="font-mono text-[10px] uppercase tracking-[0.15em] text-slate-400 font-medium mb-3">
-                Stargazing Presets
-              </p>
-              <div className="grid grid-cols-2 gap-2">
-                {STARGAZING_PRESETS.map((preset) => (
-                  <PresetButton
-                    key={preset.name}
-                    preset={preset}
-                    viewerRef={viewerRef}
-                    cesiumRef={cesiumRef}
-                    onSelect={(lat, lng, name) => {
-                      setSelected({ latitude: lat, longitude: lng, height: 0 });
-                    }}
-                  />
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
 
       {/* ── Bottom Right: Cosmic AI Assistant Floating bubble & panel ── */}
       <div className="absolute bottom-6 right-6 z-30 pointer-events-auto flex flex-col items-end gap-3 w-80">

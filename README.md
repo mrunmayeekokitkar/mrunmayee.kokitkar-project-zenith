@@ -7,7 +7,7 @@
 | **Team** | Mrunmayee Kokitkar, Sanika Chowdhary |
 | **Competition** | AstralWeb Innovate — Round 2 |
 | **Live Demo** | [mrunmayee-kokitkar-project-zenith.vercel.app](https://mrunmayee-kokitkar-project-zenith.vercel.app) |
-| **Repository** | [github.com/sanikachowdhary/mrunmayee.kokitkar-project-zenith](https://github.com/sanikachowdhary/mrunmayee.kokitkar-project-zenith) |
+| **Repository** | [github.com/mrunmayeekokitkar/mrunmayee.kokitkar-project-zenith](https://github.com/mrunmayeekokitkar/mrunmayee.kokitkar-project-zenith) |
 | **Build Date** | 26 Jun 2026 |
 
 ---
@@ -154,7 +154,7 @@ GOOGLE_GEOCODING_API_KEY=your_google_api_key_here
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/sanikachowdhary/mrunmayee.kokitkar-project-zenith.git
+git clone https://github.com/mrunmayeekokitkar/mrunmayee.kokitkar-project-zenith.git
 cd mrunmayee.kokitkar-project-zenith
 
 # 2. Install dependencies
@@ -310,9 +310,9 @@ All external API calls are proxied through Next.js Route Handlers to avoid CORS 
 - [ ] Location search: "London" → correct UK coordinates
 - [ ] Location search: raw coords "28.6139,77.2090" → accepted
 - [ ] All pages update when location changes via shared store
-- [ ] Sky Machine: slider and date fields sync bidirectionally
-- [ ] Sky Machine: mode label changes (Live / Historical / Future)
-- [ ] Sky Machine: "Now" button resets to current UTC
+- [ ] Sky Time Machine: slider and date fields sync bidirectionally
+- [ ] Sky Time Machine: mode label changes (Live / Historical / Future)
+- [ ] Sky Time Machine: "Now" button resets to current UTC
 - [ ] Dashboard: loads with visible data immediately (not empty)
 - [ ] Dashboard: live timestamps update every 5 seconds
 - [ ] Globe: Night Mode and Mission Mode toggles work

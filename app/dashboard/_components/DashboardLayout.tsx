@@ -21,6 +21,7 @@ import { ActiveSatellitesCard } from "./cards/ActiveSatellitesCard";
 import { ObservationConditions } from "./cards/ObservationConditions";
 import { CosmicTwinScore } from "./cards/CosmicTwinScore";
 import { LocationSearch } from "../../components/LocationSearch";
+import { APODDisplay } from "../../components/APODDisplay";
 import { useLocationStore, hydrateLocationStore } from "../../lib/api-client";
 import { useLiveTimestamp } from "../../lib/useLiveTimestamp";
 
@@ -136,13 +137,13 @@ function DashboardContent() {
       if (controller.signal.aborted) return;
       console.error(err);
       setError("API unavailable");
-      if (!cachedAt) setCachedAt(new Date().toISOString());
+      setCachedAt(prev => prev || new Date().toISOString());
     } finally {
       if (requestIdRef.current === currentRequestId) {
         setLoading(false);
       }
     }
-  }, [lat, lng, cachedAt]);
+  }, [lat, lng]);
 
   useEffect(() => {
     loadData(true);
@@ -233,11 +234,14 @@ function DashboardContent() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <CosmicTwinScore score={localData?.twinScore ?? 82} loading={loading && !localData} lastUpdated={lastUpdated} />
-        <ObservationConditions data={localData?.weather} loading={loading && !localData} lastUpdated={lastUpdated} />
-        <VisiblePlanetsCard data={localData?.visiblePlanets} loading={loading && !localData} lastUpdated={lastUpdated} />
-        <ISSPositionCard data={issData ?? undefined} loading={loading && !issData} lastUpdated={lastUpdated} />
-        <ActiveSatellitesCard data={satData} loading={loading && !satData} lastUpdated={lastUpdated} />
+        <CosmicTwinScore score={localData?.twinScore ?? 82} loading={loading} lastUpdated={lastUpdated} />
+        <ObservationConditions data={localData?.weather} loading={loading} lastUpdated={lastUpdated} />
+        <VisiblePlanetsCard data={localData?.visiblePlanets} loading={loading} lastUpdated={lastUpdated} />
+        <ISSPositionCard data={issData ?? undefined} loading={loading} lastUpdated={lastUpdated} />
+        <ActiveSatellitesCard data={satData} loading={loading} lastUpdated={lastUpdated} />
+        <div className="lg:col-span-2">
+          <APODDisplay />
+        </div>
       </div>
     </div>
   );
