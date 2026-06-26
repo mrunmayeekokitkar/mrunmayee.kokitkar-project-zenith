@@ -36,19 +36,24 @@ export function TimelineControls({
   const selectedDate = new Date(`${dateString}T${timeString}:00`);
   const mode = getModeLabel(selectedDate, now);
 
-  const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newOffset = parseInt(e.target.value, 10);
-    onYearOffsetChange(newOffset);
-    const newDate = new Date(now.getFullYear() + newOffset, now.getMonth(), now.getDate());
-    onDateChange(newDate.toISOString().split("T")[0]);
-  };
-
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     onDateChange(value);
     const [year] = value.split("-");
-    const newOffset = parseInt(year, 10) - now.getFullYear();
+    if (year) {
+      const newOffset = parseInt(year, 10) - now.getFullYear();
+      onYearOffsetChange(newOffset);
+    }
+  };
+
+  const handleYearNumberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = parseInt(e.target.value, 10);
+    if (isNaN(val)) return;
+    const clampedYear = Math.max(now.getFullYear() + min, Math.min(now.getFullYear() + max, val));
+    const newOffset = clampedYear - now.getFullYear();
     onYearOffsetChange(newOffset);
+    const newDate = new Date(clampedYear, selectedDate.getMonth(), selectedDate.getDate());
+    onDateChange(newDate.toISOString().split("T")[0]);
   };
 
   return (
@@ -70,18 +75,19 @@ export function TimelineControls({
         </span>
       </div>
 
+      <div>
+        <label className="mb-1 block font-mono text-[9px] uppercase tracking-wider text-slate-500">
+          Date (YYYY-MM-DD)
+        </label>
+        <input
+          type="date"
+          value={dateString}
+          onChange={handleDateChange}
+          className="w-full rounded-xl border border-white/10 bg-black/50 px-3 py-2.5 font-mono text-xs text-slate-200 outline-none focus:border-sky-400/40 transition-colors [color-scheme:dark] min-h-[44px]"
+        />
+      </div>
+
       <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="mb-1 block font-mono text-[9px] uppercase tracking-wider text-slate-500">
-            Date (YYYY-MM-DD)
-          </label>
-          <input
-            type="date"
-            value={dateString}
-            onChange={handleDateChange}
-            className="w-full rounded-xl border border-white/10 bg-black/50 px-3 py-2.5 font-mono text-xs text-slate-200 outline-none focus:border-sky-400/40 transition-colors [color-scheme:dark] min-h-[44px]"
-          />
-        </div>
         <div>
           <label className="mb-1 block font-mono text-[9px] uppercase tracking-wider text-slate-500">
             Time (HH:MM)
@@ -93,28 +99,27 @@ export function TimelineControls({
             className="w-full rounded-xl border border-white/10 bg-black/50 px-3 py-2.5 font-mono text-xs text-slate-200 outline-none focus:border-sky-400/40 transition-colors [color-scheme:dark] min-h-[44px]"
           />
         </div>
+        <div>
+          <label className="mb-1 block font-mono text-[9px] uppercase tracking-wider text-slate-500">
+            Year (±100 Years)
+          </label>
+          <input
+            type="number"
+            min={now.getFullYear() + min}
+            max={now.getFullYear() + max}
+            value={selectedDate.getFullYear()}
+            onChange={handleYearNumberChange}
+            className="w-full rounded-xl border border-white/10 bg-black/50 px-3 py-2.5 font-mono text-xs text-slate-200 outline-none focus:border-sky-400/40 transition-colors [color-scheme:dark] min-h-[44px]"
+          />
+        </div>
       </div>
 
-      <div className="flex items-center gap-4">
-        <span className="font-mono text-[10px] text-amber-400/70 whitespace-nowrap">{min}y</span>
-        <input
-          type="range"
-          min={min}
-          max={max}
-          step="1"
-          value={yearOffset}
-          onChange={handleSliderChange}
-          className="zenith-scrubber flex-1 min-h-[44px]"
-        />
-        <span className="font-mono text-[10px] text-violet-400/70 whitespace-nowrap">{max}y</span>
-      </div>
-
-      <p className="font-mono text-sm font-bold text-white text-center">
-        {yearOffset === 0
+      <p className="font-mono text-xs text-slate-400 text-center">
+        Offset: {yearOffset === 0
           ? "Present"
           : yearOffset > 0
-          ? `+${yearOffset} years into the future`
-          : `${yearOffset} years into the past`}
+          ? `+${yearOffset} years (Future)`
+          : `${yearOffset} years (Past)`}
       </p>
 
       {showNowButton && (

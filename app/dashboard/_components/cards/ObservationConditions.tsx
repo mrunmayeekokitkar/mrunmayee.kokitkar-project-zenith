@@ -27,7 +27,7 @@ export function ObservationConditions({ data, loading, lastUpdated }: { data?: W
           
           <div>
             <div className="flex items-center justify-between mb-1">
-              <span className="font-mono text-[10px] uppercase tracking-wider text-slate-400">Atmospheric Seeing</span>
+              <span className="font-mono text-[10px] uppercase tracking-wider text-slate-400">Atmospheric Seeing (Derived)</span>
               <span className="font-mono text-[10px] text-slate-300">{data.seeing}/10</span>
             </div>
             <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/5">
@@ -39,7 +39,7 @@ export function ObservationConditions({ data, loading, lastUpdated }: { data?: W
           </div>
 
           <div className="mt-2 rounded-lg border border-white/5 bg-white/[0.02] p-3 text-center">
-            <p className="font-mono text-[9px] uppercase tracking-widest text-slate-500 mb-1">Transparency</p>
+            <p className="font-mono text-[9px] uppercase tracking-widest text-slate-500 mb-1">Transparency (Derived)</p>
             <p className="font-sans text-sm font-medium text-slate-200">{data.transparency}</p>
           </div>
         </div>

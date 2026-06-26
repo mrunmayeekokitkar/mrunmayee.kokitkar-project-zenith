@@ -35,6 +35,9 @@ export function VisiblePlanetsCard({ data, loading, lastUpdated }: { data?: Plan
             </div>
           ))
         )}
+        <p className="text-[9px] font-mono text-slate-500 mt-2 border-t border-white/5 pt-2 text-center">
+          * Modeled visibility estimates for observer latitude/longitude
+        </p>
       </div>
     </TelemetryCard>
   );

@@ -327,7 +327,7 @@ export default function Page() {
       <ShootingStars />
 
       {/* ── HERO ── */}
-      <section className="relative flex min-h-[100dvh] flex-col items-center justify-center overflow-hidden px-6 text-center">
+      <section className="relative flex min-h-[100dvh] flex-col items-center justify-center overflow-hidden px-6 pt-28 pb-12 text-center">
         <OrbitRings />
 
         <div className="relative z-10 flex flex-col items-center gap-0">
@@ -443,7 +443,7 @@ export default function Page() {
                   backgroundColor: "var(--glass-bg)",
                 }}
               >
-                <span className="flex items-center gap-2">⏳ Time Machine</span>
+                <span className="flex items-center gap-2">⏳ Sky Time Machine</span>
               </motion.button>
             </Link>
           </motion.div>
