@@ -201,7 +201,8 @@ All animations use **Framer Motion** with spring physics for snappy, premium fee
 
 ## 👩‍💻 Author
 
-**Mrunmayee Kokitkar** — AstralWeb Innovate Round 2 submission
+**Mrunmayee Kokitkar**
+**Sanika Chowdhary**
 
 ---
 
