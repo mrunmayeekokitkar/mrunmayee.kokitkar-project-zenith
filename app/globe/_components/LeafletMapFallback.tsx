@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { useLocationStore } from "../../../lib/api-client";
+import { useLocationStore } from "../../lib/api-client";
 import { SpaceEventStream } from "../../components/SpaceEventStream";
 
 interface StargazingPreset {
