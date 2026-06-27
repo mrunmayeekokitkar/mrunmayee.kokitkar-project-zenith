@@ -358,6 +358,8 @@ export default function Page() {
     orbitsPerDay: (24 * 60) / 92,
     activeSatellites: 9842
   });
+  const [issPosition, setIssPosition] = useState<{ lat: number; lon: number } | null>(null);
+  const [lastIssUpdate, setLastIssUpdate] = useState<Date | null>(null);
 
   useEffect(() => {
     async function fetchLiveStats() {
@@ -371,32 +373,39 @@ export default function Page() {
         
         if (issRes.ok) {
           const issData = await issRes.json();
-          if (issData && issData.altitude) {
+          if (issData?.altitude) {
             liveAltitude = issData.altitude;
             liveVelocity = issData.velocity ?? liveVelocity;
+          }
+          if (issData?.iss_position) {
+            setIssPosition({
+              lat: parseFloat(issData.iss_position.latitude),
+              lon: parseFloat(issData.iss_position.longitude),
+            });
           }
         }
         
         if (satRes.ok) {
           const satData = await satRes.json();
-          if (satData && satData.activeCount) {
+          if (satData?.activeCount) {
             liveSatellites = satData.activeCount;
           }
         }
 
-        const orbits = (24 * 60) / 92;
-
         setStatsData({
           velocity: liveVelocity,
           altitude: liveAltitude,
-          orbitsPerDay: orbits,
-          activeSatellites: liveSatellites
+          orbitsPerDay: (24 * 60) / 92,
+          activeSatellites: liveSatellites,
         });
+        setLastIssUpdate(new Date());
       } catch (error) {
         console.error("Failed to fetch live stats:", error);
       }
     }
     fetchLiveStats();
+    const interval = setInterval(fetchLiveStats, 5000);
+    return () => clearInterval(interval);
   }, []);
 
   const STATS_DYNAMIC = useMemo(() => [
@@ -559,6 +568,26 @@ export default function Page() {
 
       {/* ── STATS ── */}
       <section className="relative z-10 mx-auto w-full max-w-5xl px-6 py-20 sm:px-10">
+        {issPosition && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6 rounded-xl border border-cyan-500/20 bg-cyan-500/5 px-4 py-3 flex flex-wrap items-center justify-center gap-3 font-mono text-[11px]"
+          >
+            <span className="flex items-center gap-1.5 text-red-400 font-bold uppercase">
+              <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse" />
+              LIVE ISS
+            </span>
+            <span className="text-slate-300">
+              {issPosition.lat.toFixed(4)}°, {issPosition.lon.toFixed(4)}°
+            </span>
+            {lastIssUpdate && (
+              <span className="text-slate-500">
+                Updated {lastIssUpdate.toLocaleTimeString()}
+              </span>
+            )}
+          </motion.div>
+        )}
         <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border sm:grid-cols-4" style={{ borderColor: "var(--border)" }}>
           {STATS_DYNAMIC.map((s, i) => (
             <motion.div

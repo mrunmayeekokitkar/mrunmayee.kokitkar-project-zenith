@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { formatLocalTime, getTimezoneAbbreviation } from "../../../lib/timezone";
 
 interface ISSPass {
   riseTime: string;
@@ -35,16 +36,41 @@ function PassRow({
   pass,
   index,
   isBest,
+  lat,
+  lng,
+  tableMode,
 }: {
   pass: ISSPass;
   index: number;
   isBest: boolean;
+  lat: number;
+  lng: number;
+  tableMode?: boolean;
 }) {
   const countdown = useCountdown(pass.riseTime);
   const riseDate = new Date(pass.riseTime);
-  const riseStr = riseDate.toUTCString().slice(0, 25);
+  const riseUtc = riseDate.toISOString().slice(11, 19) + " UTC";
+  const localTime = formatLocalTime(riseDate, lat, lng);
+  const tzAbbr = getTimezoneAbbreviation(riseDate, lat, lng);
   const durationMin = Math.floor(pass.duration / 60);
   const durationSec = pass.duration % 60;
+
+  if (tableMode) {
+    return (
+      <tr className={isBest ? "bg-yellow-500/5" : "hover:bg-white/[0.02]"}>
+        <td className="px-3 py-2.5 font-mono text-xs text-slate-300">{index + 1}</td>
+        <td className="px-3 py-2.5 font-mono text-xs text-slate-200">{riseUtc}</td>
+        <td className="px-3 py-2.5 font-mono text-xs text-slate-200">
+          {durationMin}m {durationSec > 0 ? `${durationSec}s` : ""}
+        </td>
+        <td className="px-3 py-2.5 font-mono text-xs text-slate-200">{pass.maxElevation}°</td>
+        <td className="px-3 py-2.5 font-mono text-xs text-cyan-300">
+          {localTime} {tzAbbr}
+        </td>
+        <td className="px-3 py-2.5 font-mono text-[10px] text-cyan-400">{countdown}</td>
+      </tr>
+    );
+  }
 
   return (
     <div
@@ -54,7 +80,6 @@ function PassRow({
           : "border-white/5 bg-white/[0.02]"
       }`}
     >
-      {/* Header row */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="font-mono text-[9px] uppercase tracking-wider text-slate-500">
@@ -66,13 +91,8 @@ function PassRow({
             </span>
           )}
         </div>
-        {/* Countdown */}
-        <span className="font-mono text-[10px] font-bold text-cyan-400">
-          {countdown}
-        </span>
+        <span className="font-mono text-[10px] font-bold text-cyan-400">{countdown}</span>
       </div>
-
-      {/* Details grid */}
       <div className="grid grid-cols-3 gap-2 text-center">
         <div className="rounded-lg bg-white/[0.03] border border-white/5 p-2">
           <p className="font-mono text-[8px] uppercase text-slate-500 mb-0.5">Max Elev.</p>
@@ -89,8 +109,7 @@ function PassRow({
           <p className="font-mono text-sm font-bold text-slate-200">{pass.direction}</p>
         </div>
       </div>
-
-      <p className="font-mono text-[9px] text-slate-600">{riseStr} UTC</p>
+      <p className="font-mono text-[9px] text-slate-600">{riseUtc} · Local: {localTime}</p>
     </div>
   );
 }
@@ -99,10 +118,12 @@ export function PassPredictCard({
   lat,
   lng,
   lastUpdated,
+  showTable = false,
 }: {
   lat: number;
   lng: number;
   lastUpdated?: string;
+  showTable?: boolean;
 }) {
   const [passes, setPasses] = useState<ISSPass[]>([]);
   const [loading, setLoading] = useState(true);
@@ -118,7 +139,7 @@ export function PassPredictCard({
       if (!res.ok) throw new Error("API error");
       const data = (await res.json()) as { passes: ISSPass[] };
       if (Array.isArray(data.passes)) {
-        setPasses(data.passes.slice(0, 3));
+        setPasses(data.passes.slice(0, 5));
       }
     } catch {
       setError(true);
@@ -131,7 +152,6 @@ export function PassPredictCard({
     fetchPasses();
   }, [fetchPasses]);
 
-  // Best pass = highest max elevation
   const bestIdx = passes.reduce(
     (best, p, i) => (p.maxElevation > (passes[best]?.maxElevation ?? 0) ? i : best),
     0
@@ -141,19 +161,19 @@ export function PassPredictCard({
     <div className="rounded-2xl border border-white/10 bg-slate-950/70 p-5 backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] flex flex-col gap-4 relative overflow-hidden">
       <div className="absolute top-0 right-0 w-32 h-32 rounded-full bg-cyan-500/5 blur-2xl pointer-events-none" />
 
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" strokeWidth="2">
             <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.07 13 19.79 19.79 0 0 1 1 4.18 2 2 0 0 1 2.96 2h3.06a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 21 16.92z" />
           </svg>
           <span className="font-mono text-[10px] uppercase tracking-widest text-slate-400">
-            ISS Pass Predictor
+            ISS Pass Schedule
           </span>
         </div>
         <button
+          type="button"
           onClick={fetchPasses}
-          className="font-mono text-[9px] text-sky-400 hover:text-sky-300 border border-sky-500/20 rounded px-2 py-1 cursor-pointer"
+          className="font-mono text-[9px] text-sky-400 hover:text-sky-300 border border-sky-500/20 rounded px-2 py-1 cursor-pointer transition-colors"
         >
           Refresh
         </button>
@@ -161,7 +181,9 @@ export function PassPredictCard({
 
       {loading ? (
         <div className="space-y-3 animate-pulse">
-          {[1, 2, 3].map((i) => <div key={i} className="h-24 bg-white/5 rounded-xl" />)}
+          {[1, 2, 3, 4, 5].map((i) => (
+            <div key={i} className={`bg-white/5 rounded-xl ${showTable ? "h-10" : "h-24"}`} />
+          ))}
         </div>
       ) : error ? (
         <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 text-center">
@@ -175,19 +197,41 @@ export function PassPredictCard({
             No ISS passes above 10° in next 24 hours
           </p>
         </div>
+      ) : showTable ? (
+        <div className="overflow-x-auto rounded-xl border border-white/5">
+          <table className="w-full text-left">
+            <thead>
+              <tr className="border-b border-white/10 bg-white/[0.02]">
+                <th className="px-3 py-2 font-mono text-[9px] uppercase text-slate-500">Pass</th>
+                <th className="px-3 py-2 font-mono text-[9px] uppercase text-slate-500">Rise Time</th>
+                <th className="px-3 py-2 font-mono text-[9px] uppercase text-slate-500">Duration</th>
+                <th className="px-3 py-2 font-mono text-[9px] uppercase text-slate-500">Max Elev.</th>
+                <th className="px-3 py-2 font-mono text-[9px] uppercase text-slate-500">Local Time</th>
+                <th className="px-3 py-2 font-mono text-[9px] uppercase text-slate-500">Countdown</th>
+              </tr>
+            </thead>
+            <tbody>
+              {passes.map((pass, i) => (
+                <PassRow
+                  key={pass.riseTime}
+                  pass={pass}
+                  index={i}
+                  isBest={i === bestIdx}
+                  lat={lat}
+                  lng={lng}
+                  tableMode
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
       ) : (
         <div className="flex flex-col gap-3">
           {passes.map((pass, i) => (
-            <PassRow key={pass.riseTime} pass={pass} index={i} isBest={i === bestIdx} />
+            <PassRow key={pass.riseTime} pass={pass} index={i} isBest={i === bestIdx} lat={lat} lng={lng} />
           ))}
         </div>
       )}
-
-      <div className="rounded-lg border border-white/5 bg-white/[0.02] p-2.5">
-        <p className="font-mono text-[9px] text-slate-500">
-          💡 Move outside with clear NE horizon for best viewing. Passes above 40° are brightest.
-        </p>
-      </div>
 
       <p className="font-mono text-[9px] text-slate-600 text-right">
         SGP4 propagator · CelesTrak TLE · {lastUpdated}

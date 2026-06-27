@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, Suspense } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
   fetchISSPosition,
@@ -24,7 +24,6 @@ import { PassPredictCard } from "./cards/PassPredictCard";
 import { ZenithCard } from "./cards/ZenithCard";
 import { ISSSpeedCard } from "./cards/ISSSpeedCard";
 import { LocationSearch } from "../../components/LocationSearch";
-import { APODDisplay } from "../../components/APODDisplay";
 import { useLocationStore, hydrateLocationStore } from "../../lib/api-client";
 import { useLiveTimestamp } from "../../lib/useLiveTimestamp";
 import { ErrorBoundary } from "../../components/ErrorBoundary";
@@ -63,17 +62,18 @@ function Toast({ message, visible }: { message: string; visible: boolean }) {
 
 function DashboardContent() {
   const searchParams = useSearchParams();
-  const router = useRouter();
   const { latitude, longitude, locationName, setLocation } = useLocationStore();
   const lastUpdated = useLiveTimestamp(5000);
 
   const [lat, setLat] = useState(19.076);
   const [lng, setLng] = useState(72.8777);
+  const [locationReady, setLocationReady] = useState(false);
   const [issData, setIssData] = useState<ISSData | null>(null);
   const [satData, setSatData] = useState<SatelliteProxyData | null>(null);
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [localData, setLocalData] = useState(FALLBACK_DATA);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cachedAt, setCachedAt] = useState<string | null>(null);
   const [toastVisible, setToastVisible] = useState(false);
@@ -81,53 +81,58 @@ function DashboardContent() {
   const [zenithObject, setZenithObject] = useState("Jupiter");
   const requestIdRef = useRef(0);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const geoAttemptedRef = useRef(false);
 
   useEffect(() => {
     hydrateLocationStore();
   }, []);
 
-  // Read URL params on mount
+  // Read URL params on mount — priority over defaults
   useEffect(() => {
     const urlLat = searchParams.get("lat");
-    const urlLng = searchParams.get("lng");
-    const urlTime = searchParams.get("t");
+    const urlLng = searchParams.get("lng") ?? searchParams.get("lon");
+    const urlCity = searchParams.get("city");
+
     if (urlLat && urlLng) {
       const parsedLat = parseFloat(urlLat);
       const parsedLng = parseFloat(urlLng);
       if (!isNaN(parsedLat) && !isNaN(parsedLng)) {
-        setLocation(parsedLat, parsedLng);
+        setLocation(parsedLat, parsedLng, urlCity ?? undefined);
         setLat(parsedLat);
         setLng(parsedLng);
-        if (urlTime) {
-          setCachedAt(new Date(urlTime).toISOString());
-        }
+        setLocationReady(true);
         return;
       }
     }
 
-    // Browser geolocation attempt
-    if (typeof navigator !== "undefined" && navigator.geolocation && !urlLat) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          setLocation(pos.coords.latitude, pos.coords.longitude, "Your Location");
-          setLat(pos.coords.latitude);
-          setLng(pos.coords.longitude);
-        },
-        () => {
-          setLocation(19.076, 72.8777, "Mumbai");
-          setLat(19.076);
-          setLng(72.8777);
-        },
-        { timeout: 3000 }
-      );
-    } else {
-      setLat(latitude);
-      setLng(longitude);
+    if (!geoAttemptedRef.current) {
+      geoAttemptedRef.current = true;
+      if (typeof navigator !== "undefined" && navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            setLocation(pos.coords.latitude, pos.coords.longitude, "Your Location");
+            setLat(pos.coords.latitude);
+            setLng(pos.coords.longitude);
+            setLocationReady(true);
+          },
+          () => {
+            setLocation(19.076, 72.8777, "Mumbai");
+            setLat(19.076);
+            setLng(72.8777);
+            setLocationReady(true);
+          },
+          { timeout: 3000 }
+        );
+      } else {
+        setLocationReady(true);
+      }
     }
-  }, [searchParams, latitude, longitude, setLocation]);
+  }, [searchParams, setLocation]);
 
   const loadData = useCallback(
     async (showSpinner = true) => {
+      if (!locationReady) return;
+
       const currentRequestId = ++requestIdRef.current;
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
@@ -143,7 +148,6 @@ function DashboardContent() {
       setLocalData(mock);
       setZenithObject(getZenithObject(lat, lng));
 
-      // Add a 3-second timeout that forces isLoading = false regardless of API response
       const forceTimeout = setTimeout(() => {
         if (requestIdRef.current === currentRequestId) {
           setLoading(false);
@@ -193,13 +197,14 @@ function DashboardContent() {
         }
       }
     },
-    [lat, lng]
+    [lat, lng, locationReady]
   );
 
-  // Auto-load on mount
   useEffect(() => {
-    loadData(true);
-  }, [lat, lng, loadData]);
+    if (locationReady) {
+      loadData(true);
+    }
+  }, [lat, lng, locationReady, loadData]);
 
   // Poll ISS every 5 seconds
   useEffect(() => {
@@ -216,13 +221,31 @@ function DashboardContent() {
     setTimeout(() => setToastVisible(false), 3000);
   };
 
-  const handleCopySkyLink = () => {
-    const timestamp = new Date().toISOString();
-    const link = `https://mrunmayee-kokitkar-project-zenith.vercel.app/dashboard?lat=${lat}&lng=${lng}&t=${timestamp}`;
-    navigator.clipboard.writeText(link).then(() => {
-      showToast("🔗 Sky link copied!");
-    });
+  const handleCopySkyLink = async () => {
+    const cityParam = encodeURIComponent(locationName);
+    const link = `${window.location.origin}/dashboard?lat=${lat}&lon=${lng}&city=${cityParam}`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: "Project Zenith Dashboard", url: link });
+      } else {
+        await navigator.clipboard.writeText(link);
+      }
+      showToast("🔗 Dashboard link copied!");
+    } catch {
+      showToast("Could not copy link");
+    }
   };
+
+  const handleSyncTelemetry = async () => {
+    setSyncing(true);
+    await loadData(false);
+    setSyncing(false);
+    showToast(`Telemetry updated — ${new Date().toLocaleTimeString()}`);
+  };
+
+  if (!locationReady) {
+    return <SuspenseSkeletonGrid />;
+  }
 
   return (
     <>
@@ -234,10 +257,12 @@ function DashboardContent() {
           <div className="w-full md:w-[400px]">
             <LocationSearch
               defaultQuery={locationName}
-              onLocationSelect={(newLat, newLng) => {
+              updateInPlace
+              onLocationSelect={(newLat, newLng, name) => {
+                if (newLat == null || newLng == null) return;
                 setLat(newLat);
                 setLng(newLng);
-                router.push(`/dashboard?lat=${newLat}&lng=${newLng}&t=${Date.now()}`);
+                setLocation(newLat, newLng, name);
               }}
             />
           </div>
@@ -254,23 +279,28 @@ function DashboardContent() {
               onClick={handleCopySkyLink}
               className="flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-slate-200 font-mono text-[10px] uppercase tracking-widest px-4 py-3 transition-colors min-h-[44px] cursor-pointer"
             >
-              🔗 Share Sky Link
+              🔗 Share Link
             </button>
             <button
               type="button"
-              onClick={() => loadData(true)}
-              disabled={loading}
+              onClick={handleSyncTelemetry}
+              disabled={syncing}
               className="flex items-center justify-center gap-2 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 font-mono text-[10px] uppercase tracking-widest px-6 py-3 transition-colors disabled:opacity-50 min-h-[44px] cursor-pointer font-semibold"
             >
-              {loading ? (
-                <span className="h-4 w-4 rounded-full border-2 border-slate-950/20 border-t-slate-950 animate-spin" />
+              {syncing ? (
+                <>
+                  <span className="h-4 w-4 rounded-full border-2 border-slate-950/20 border-t-slate-950 animate-spin" />
+                  Syncing...
+                </>
               ) : (
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                  <path d="M3 3v5h5" />
-                </svg>
+                <>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                    <path d="M3 3v5h5" />
+                  </svg>
+                  Sync Telemetry
+                </>
               )}
-              Sync Telemetry
             </button>
           </div>
         </div>
@@ -361,11 +391,6 @@ function DashboardContent() {
                 />
               </ErrorBoundary>
 
-              {/* ISS Pass Predictor */}
-              <ErrorBoundary>
-                <PassPredictCard lat={lat} lng={lng} lastUpdated={lastUpdated} />
-              </ErrorBoundary>
-
               {/* Zenith Object Card */}
               <ErrorBoundary>
                 <ZenithCard
@@ -374,10 +399,10 @@ function DashboardContent() {
                 />
               </ErrorBoundary>
 
-              {/* APOD — spans full width */}
+              {/* ISS Pass Schedule — full width table */}
               <div className="sm:col-span-2 lg:col-span-3">
                 <ErrorBoundary>
-                  <APODDisplay />
+                  <PassPredictCard lat={lat} lng={lng} lastUpdated={lastUpdated} showTable />
                 </ErrorBoundary>
               </div>
             </div>

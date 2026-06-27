@@ -75,7 +75,7 @@ export function GlobeClient() {
   const [showConstellationOverlay, setShowConstellationOverlay] = useState(false);
 
   // New features state
-  const [isNightMode, setIsNightMode] = useState(true);
+  const [isNightMode, setIsNightMode] = useState(false);
   const [showRadar, setShowRadar] = useState(false);
   const [timelineOffset, setTimelineOffset] = useState(0); // In hours (-24 to +24)
   const [chatOpen, setChatOpen] = useState(false);
@@ -102,6 +102,7 @@ export function GlobeClient() {
   const constellationOverlayRef = useRef<CesiumNS.CustomDataSource | null>(null);
   const orbitTrailRef = useRef<CesiumNS.CustomDataSource | null>(null);
   const multiSatRef = useRef<CesiumNS.CustomDataSource | null>(null);
+  const locationPinRef = useRef<CesiumNS.Entity | null>(null);
 
   // Sync ref for callback handlers to prevent stale closure issues
   const selectedRef = useRef<GeographicCoordinate | null>(null);
@@ -561,11 +562,20 @@ export function GlobeClient() {
     if (orbitTrailRef.current) {
       orbitTrailRef.current.show = showOrbitTrail;
     }
+    if (multiSatRef.current) {
+      multiSatRef.current.show = showOrbitTrail;
+    }
     if (issDataSourceRef.current && cesiumRef.current) {
-      const issEntity = issDataSourceRef.current.entities.getById("ISS_PATH");
-      if (issEntity?.path) {
-        issEntity.path.show = new cesiumRef.current.ConstantProperty(showOrbitTrail);
-      }
+      const Cesium = cesiumRef.current;
+      issDataSourceRef.current.entities.values.forEach((entity) => {
+        if (entity.id === "ISS_PATH") {
+          if (entity.path) {
+            entity.path.show = new Cesium.ConstantProperty(showOrbitTrail);
+          }
+        } else if (entity.polyline) {
+          entity.show = showOrbitTrail;
+        }
+      });
     }
   }, [showOrbitTrail]);
 
@@ -595,8 +605,16 @@ export function GlobeClient() {
     const viewer = viewerRef.current;
     if (!viewer) return;
 
+    // Night mode ON = dark side visible with lighting terminator + stars
+    // Night mode OFF = evenly lit day view
     viewer.scene.globe.enableLighting = isNightMode;
     viewer.scene.globe.atmosphereLightIntensity = isNightMode ? 8.0 : 22.0;
+    if (viewer.scene.skyBox) {
+      viewer.scene.skyBox.show = isNightMode;
+    }
+    viewer.scene.backgroundColor = cesiumRef.current?.Color.fromCssColorString(
+      isNightMode ? "#03040a" : "#0a1628"
+    ) ?? viewer.scene.backgroundColor;
 
     if (isNightMode && isMissionMode) {
       const Cesium = cesiumRef.current;
@@ -721,6 +739,43 @@ export function GlobeClient() {
     }
   }, []);
 
+  const handleLocationSelect = useCallback((lat: number, lng: number, name?: string) => {
+    const viewer = viewerRef.current;
+    const Cesium = cesiumRef.current;
+    if (!viewer || !Cesium) return;
+
+    setAutoRotate(false);
+    setSelected({ latitude: lat, longitude: lng, height: 0 });
+    setSelectedSatellite(null);
+
+    if (locationPinRef.current) {
+      viewer.entities.remove(locationPinRef.current);
+    }
+    locationPinRef.current = viewer.entities.add({
+      position: Cesium.Cartesian3.fromDegrees(lng, lat, 0),
+      point: {
+        pixelSize: 10,
+        color: Cesium.Color.SKYBLUE,
+        outlineColor: Cesium.Color.WHITE,
+        outlineWidth: 2,
+      },
+      label: {
+        text: name ?? `${lat.toFixed(2)}, ${lng.toFixed(2)}`,
+        font: "11px monospace",
+        fillColor: Cesium.Color.WHITE,
+        outlineColor: Cesium.Color.BLACK,
+        outlineWidth: 2,
+        style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+        pixelOffset: new Cesium.Cartesian2(0, -18),
+      },
+    });
+
+    viewer.camera.flyTo({
+      destination: Cesium.Cartesian3.fromDegrees(lng, lat, 2_000_000),
+      duration: 2,
+    });
+  }, []);
+
   const handleResetView = useCallback(() => {
     const viewer = viewerRef.current;
     const Cesium = cesiumRef.current;
@@ -730,7 +785,6 @@ export function GlobeClient() {
     setSelectedSatellite(null);
     setAutoRotate(true);
     
-    // Reset any locked camera tracking transforms
     viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
 
     viewer.camera.flyTo({
@@ -807,59 +861,55 @@ export function GlobeClient() {
         </div>
       )}
 
+      {/* ── Top-Right Control Buttons (always visible) ── */}
+      <div className="pointer-events-auto fixed top-24 right-6 z-[1000] flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setIsNightMode(!isNightMode)}
+          className="flex items-center gap-2 rounded-full border border-white/10 bg-slate-950/80 px-4 py-2 font-mono text-[10px] uppercase tracking-widest text-slate-300 backdrop-blur-md transition-all hover:border-sky-400/30 hover:bg-slate-950/90 hover:text-sky-300 cursor-pointer shadow-lg"
+        >
+          {isNightMode ? "🌙 Night Mode [ON]" : "☀️ Day Mode [ON]"}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setIsMissionMode(!isMissionMode)}
+          className={`flex items-center gap-2 rounded-full border px-4 py-2 font-mono text-[10px] uppercase tracking-widest backdrop-blur-md transition-all cursor-pointer shadow-lg ${
+            isMissionMode 
+              ? "border-emerald-500/40 bg-emerald-950/80 text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.2)]" 
+              : "border-white/10 bg-slate-950/80 text-slate-300 hover:border-emerald-400/30 hover:text-emerald-300"
+          }`}
+        >
+          🛰 Mission Mode
+        </button>
+
+        <button
+          type="button"
+          onClick={handleResetView}
+          className="flex items-center gap-2 rounded-full border border-white/10 bg-slate-950/80 px-4 py-2 font-mono text-[10px] uppercase tracking-widest text-slate-300 backdrop-blur-md transition-all hover:border-sky-400/30 hover:bg-slate-950/90 hover:text-sky-300 cursor-pointer shadow-lg"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" className="stroke-current">
+            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M3 3v5h5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+          Reset View
+        </button>
+      </div>
+
       {/* ── Floating Header Chrome ── */}
       <div className="pointer-events-none absolute inset-x-0 top-20 z-20 flex items-center justify-between p-6">
-        {/* Logo / Telemetry */}
         <div className="pointer-events-auto flex items-center gap-3 rounded-full border border-white/5 bg-slate-950/40 px-4 py-2 backdrop-blur-md">
           <span className="block h-2 w-2 rounded-full bg-sky-400 shadow-[0_0_12px_2px_rgba(56,167,255,0.7)] animate-pulse" />
           <span className="font-mono text-xs uppercase tracking-[0.25em] text-slate-200">
             Zenith &middot; Earth Observatory
           </span>
         </div>
-
-        {/* Global Controls & Mode Toggles */}
-        <div className="pointer-events-auto flex items-center gap-3">
-          {/* Day/Night Toggle */}
-          <button
-            type="button"
-            onClick={() => setIsNightMode(!isNightMode)}
-            className="flex items-center gap-2 rounded-full border border-white/10 bg-slate-950/40 px-4 py-2 font-mono text-[10px] uppercase tracking-widest text-slate-300 backdrop-blur-md transition-all hover:border-sky-400/30 hover:bg-slate-950/70 hover:text-sky-300 cursor-pointer"
-          >
-            {isNightMode ? "🌙 Night Mode" : "🌞 Day Mode"}
-          </button>
-
-          {/* Mission Mode Activation */}
-          <button
-            type="button"
-            onClick={() => setIsMissionMode(!isMissionMode)}
-            className={`flex items-center gap-2 rounded-full border px-4 py-2 font-mono text-[10px] uppercase tracking-widest backdrop-blur-md transition-all cursor-pointer ${
-              isMissionMode 
-                ? "border-emerald-500/40 bg-emerald-950/40 text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.2)]" 
-                : "border-white/10 bg-slate-950/40 text-slate-300 hover:border-emerald-400/30 hover:text-emerald-300"
-            }`}
-          >
-            🛰 Mission Mode
-          </button>
-
-          {/* Reset View */}
-          <button
-            type="button"
-            onClick={handleResetView}
-            className="flex items-center gap-2 rounded-full border border-white/10 bg-slate-950/40 px-4 py-2 font-mono text-[10px] uppercase tracking-widest text-slate-300 backdrop-blur-md transition-all hover:border-sky-400/30 hover:bg-slate-950/70 hover:text-sky-300 cursor-pointer"
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" className="stroke-current">
-              <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-              <path d="M3 3v5h5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-            Reset View
-          </button>
-        </div>
       </div>
 
-      {/* ── Left Side: Controls, Location & Mission Checklist ── */}
-      <div className="absolute top-24 left-6 z-20 w-80 max-h-[calc(100vh-6rem)] overflow-y-auto pointer-events-auto flex flex-col gap-4 hidden lg:flex">
-        <div className="rounded-2xl border border-white/10 bg-slate-950/70 p-4 backdrop-blur-xl">
-          <LocationSearch showCurrentLocation />
+      {/* ── Left Side: Controls, Location & Stargazing Report ── */}
+      <div className="absolute top-24 left-6 z-30 w-80 max-h-[calc(100vh-6rem)] overflow-y-auto pointer-events-auto flex flex-col gap-4 hidden lg:flex">
+        <div className="rounded-2xl border border-white/10 bg-slate-950/70 p-4 backdrop-blur-xl shrink-0 relative z-20">
+          <LocationSearch showCurrentLocation onLocationSelect={handleLocationSelect} />
         </div>
 
         {/* ── Left Side: Mission Checklist Panel ── */}
@@ -903,10 +953,92 @@ export function GlobeClient() {
             )}
           </div>
         )}
+        {/* Stargazing Report — stacked below search, scrollable */}
+        {selected && selectedDetails && (
+          <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-slate-950/85 p-5 shadow-[0_8px_32px_rgba(0,0,0,0.6)] backdrop-blur-xl shrink-0 z-10 max-h-[50vh] overflow-y-auto">
+            <div className="absolute -inset-px rounded-2xl bg-gradient-to-br from-sky-400/15 via-transparent to-purple-400/5 pointer-events-none" />
+
+            <div className="relative flex items-center justify-between gap-3 border-b border-white/5 pb-3">
+              <div className="flex items-center gap-2">
+                <span className="relative flex h-2 w-2">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-sky-400/60" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-sky-400" />
+                </span>
+                <span className="font-mono text-[10px] uppercase tracking-[0.25em] text-sky-400 font-bold">
+                  Geographic Stargazing Report
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelected(null)}
+                className="text-slate-400 hover:text-slate-100 transition-colors cursor-pointer"
+                aria-label="Close report"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <path d="M18 6 6 18M6 6l12 12" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </button>
+            </div>
+
+            <div className="mt-4 grid grid-cols-3 gap-2 border-b border-white/5 pb-3 font-mono text-[10px]">
+              <div>
+                <span className="text-slate-500 uppercase tracking-wider">Latitude</span>
+                <p className="text-slate-200 font-semibold mt-0.5">{formatDegrees(selected.latitude, "lat")}</p>
+              </div>
+              <div>
+                <span className="text-slate-500 uppercase tracking-wider">Longitude</span>
+                <p className="text-slate-200 font-semibold mt-0.5">{formatDegrees(selected.longitude, "lon")}</p>
+              </div>
+              <div>
+                <span className="text-slate-500 uppercase tracking-wider">Elevation</span>
+                <p className="text-slate-200 font-semibold mt-0.5">{Math.round(selected.height).toLocaleString()}m</p>
+              </div>
+            </div>
+
+            <div className="mt-4 flex flex-col gap-3 font-mono text-[10px]">
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500 uppercase tracking-wider">Sky Visibility Quality</span>
+                <span className={`px-2 py-0.5 rounded-[4px] text-[9px] font-bold ${
+                  selectedDetails.stargazingQuality === "Good" ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" :
+                  selectedDetails.stargazingQuality === "Moderate" ? "bg-amber-500/10 text-amber-400 border border-amber-400/20" :
+                  "bg-red-500/10 text-red-400 border border-red-500/20"
+                }`}>
+                  {selectedDetails.stargazingQuality}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500 uppercase tracking-wider">Light Pollution index</span>
+                <span className="text-slate-200 font-semibold">Bortle {selectedDetails.lightPollutionScore}/9</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500 uppercase tracking-wider">Satellite Density</span>
+                <span className="text-slate-200 font-semibold">{selectedDetails.satDensity} Overhead</span>
+              </div>
+              <div className="flex justify-between items-start gap-4">
+                <span className="text-slate-500 uppercase tracking-wider shrink-0">ISS Pass Prediction</span>
+                <span className="text-slate-200 text-right font-medium">{selectedDetails.issPrediction}</span>
+              </div>
+              <div className="mt-2 p-3 rounded-xl border border-sky-500/10 bg-sky-500/5 leading-relaxed text-slate-300">
+                <p className="font-semibold text-sky-400 mb-0.5">Cosmic Interpretation:</p>
+                {selectedDetails.explanation}
+              </div>
+            </div>
+
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                onClick={copyToClipboard}
+                className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] py-2 font-mono text-[9px] uppercase tracking-wider text-slate-300 hover:bg-white/[0.08] hover:text-slate-100 transition-all cursor-pointer min-h-[40px]"
+              >
+                {copySuccess ? "Copied Telemetry!" : "Copy Telemetry"}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* ── Right Side: Space Event Stream, Simulation Timeline, HUD Controls & Presets ── */}
-      <div className="absolute top-24 right-6 z-20 w-80 pointer-events-auto max-h-[calc(100vh-6rem)] flex flex-col gap-4 hidden lg:flex overflow-y-auto pb-6 pr-1 scrollbar-thin">
+      {/* ── Right Side: Space Event Stream, Simulation Timeline, HUD Controls ── */}
+      <div className="absolute top-40 right-6 z-20 w-80 pointer-events-auto max-h-[calc(100vh-10rem)] flex flex-col gap-4 hidden lg:flex overflow-y-auto pb-6 pr-1">
         <SpaceEventStream />
 
         {/* Simulation Timeline */}
@@ -1057,105 +1189,15 @@ export function GlobeClient() {
         </div>
       )}
 
-      {/* ── Left Side Bottom: why this location? explainer panel ── */}
+      {/* ── Mobile: Stargazing Report bottom sheet ── */}
       {selected && selectedDetails && (
-        <div className="absolute bottom-32 left-6 z-20 w-[380px] pointer-events-auto animate-[fadeUp_0.4s_cubic-bezier(0.16,1,0.3,1)]">
-          <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-slate-950/85 p-5 shadow-[0_8px_32px_rgba(0,0,0,0.6)] backdrop-blur-xl">
-            <div className="absolute -inset-px rounded-2xl bg-gradient-to-br from-sky-400/15 via-transparent to-purple-400/5 pointer-events-none" />
-
-            {/* Header */}
-            <div className="relative flex items-center justify-between gap-3 border-b border-white/5 pb-3">
-              <div className="flex items-center gap-2">
-                <span className="relative flex h-2 w-2">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-sky-400/60" />
-                  <span className="relative inline-flex h-2 w-2 rounded-full bg-sky-400" />
-                </span>
-                <span className="font-mono text-[10px] uppercase tracking-[0.25em] text-sky-400 font-bold">
-                  Geographic Stargazing Report
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelected(null)}
-                className="text-slate-400 hover:text-slate-100 transition-colors cursor-pointer"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <path d="M18 6 6 18M6 6l12 12" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              </button>
-            </div>
-
-            {/* Geographic coordinate printout */}
-            <div className="mt-4 grid grid-cols-3 gap-2 border-b border-white/5 pb-3 font-mono text-[10px]">
-              <div>
-                <span className="text-slate-500 uppercase tracking-wider">Latitude</span>
-                <p className="text-slate-200 font-semibold mt-0.5">{formatDegrees(selected.latitude, "lat")}</p>
-              </div>
-              <div>
-                <span className="text-slate-500 uppercase tracking-wider">Longitude</span>
-                <p className="text-slate-200 font-semibold mt-0.5">{formatDegrees(selected.longitude, "lon")}</p>
-              </div>
-              <div>
-                <span className="text-slate-500 uppercase tracking-wider">Elevation</span>
-                <p className="text-slate-200 font-semibold mt-0.5">{Math.round(selected.height).toLocaleString()}m</p>
-              </div>
-            </div>
-
-            {/* Dynamic Telemetry list */}
-            <div className="mt-4 flex flex-col gap-3 font-mono text-[10px]">
-              <div className="flex justify-between items-center">
-                <span className="text-slate-500 uppercase tracking-wider">Sky Visibility Quality</span>
-                <span className={`px-2 py-0.5 rounded-[4px] text-[9px] font-bold ${
-                  selectedDetails.stargazingQuality === "Good" ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" :
-                  selectedDetails.stargazingQuality === "Moderate" ? "bg-amber-500/10 text-amber-400 border border-amber-400/20" :
-                  "bg-red-500/10 text-red-400 border border-red-500/20"
-                }`}>
-                  {selectedDetails.stargazingQuality}
-                </span>
-              </div>
-
-              <div className="flex justify-between items-center">
-                <span className="text-slate-500 uppercase tracking-wider">Light Pollution index</span>
-                <span className="text-slate-200 font-semibold">Bortle {selectedDetails.lightPollutionScore}/9</span>
-              </div>
-
-              <div className="flex justify-between items-center">
-                <span className="text-slate-500 uppercase tracking-wider">Satellite Density</span>
-                <span className="text-slate-200 font-semibold">{selectedDetails.satDensity} Overhead</span>
-              </div>
-
-              <div className="flex justify-between items-start gap-4">
-                <span className="text-slate-500 uppercase tracking-wider shrink-0">ISS Pass Prediction</span>
-                <span className="text-slate-200 text-right font-medium">{selectedDetails.issPrediction}</span>
-              </div>
-
-              <div className="mt-2 p-3 rounded-xl border border-sky-500/10 bg-sky-500/5 leading-relaxed text-slate-300">
-                <p className="font-semibold text-sky-400 mb-0.5">Cosmic Interpretation:</p>
-                {selectedDetails.explanation}
-              </div>
-            </div>
-
-            <div className="mt-4 flex gap-2">
-              <button
-                type="button"
-                onClick={copyToClipboard}
-                className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] py-2 font-mono text-[9px] uppercase tracking-wider text-slate-300 hover:bg-white/[0.08] hover:text-slate-100 transition-all cursor-pointer min-h-[40px]"
-              >
-                {copySuccess ? "Copied Telemetry!" : "Copy Telemetry"}
-              </button>
-              <button
-                type="button"
-                onClick={handleResetView}
-                className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-sky-500/20 bg-sky-500/10 hover:bg-sky-500/25 py-2 font-mono text-[9px] uppercase tracking-wider text-sky-300 hover:text-sky-200 transition-all cursor-pointer min-h-[40px]"
-              >
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" className="stroke-current">
-                  <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
-                  <path d="M3 3v5h5" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-                Reset View
-              </button>
-            </div>
+        <div className="lg:hidden fixed inset-x-0 bottom-0 z-[45] pointer-events-auto max-h-[45vh] overflow-y-auto rounded-t-2xl border-t border-white/10 bg-slate-950/95 backdrop-blur-xl p-4">
+          <div className="flex items-center justify-between mb-3">
+            <span className="font-mono text-[10px] uppercase tracking-widest text-sky-400">Stargazing Report</span>
+            <button type="button" onClick={() => setSelected(null)} className="text-slate-400 hover:text-white cursor-pointer">✕</button>
           </div>
+          <p className="font-mono text-[10px] text-slate-300">{formatDegrees(selected.latitude, "lat")} · {formatDegrees(selected.longitude, "lon")}</p>
+          <p className="font-mono text-[10px] text-slate-400 mt-2">{selectedDetails.explanation}</p>
         </div>
       )}
 

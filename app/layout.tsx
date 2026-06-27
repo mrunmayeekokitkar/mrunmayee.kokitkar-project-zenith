@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { NavBar } from "./components/NavBar";
+import { NavigationProgress } from "./components/NavigationProgress";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -41,6 +42,9 @@ export const metadata: Metadata = {
     images: ["/screenshots/dashboard_view.png"],
   },
   metadataBase: new URL("https://mrunmayee-kokitkar-project-zenith.vercel.app"),
+  icons: {
+    icon: "/favicon.svg",
+  },
 };
 
 export default function RootLayout({
@@ -55,6 +59,7 @@ export default function RootLayout({
     >
       <body className="min-h-[100dvh] flex flex-col bg-transparent relative">
         <div className="cosmic-bg" />
+        <NavigationProgress />
         <NavBar />
         {children}
       </body>

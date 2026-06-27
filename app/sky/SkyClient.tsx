@@ -7,6 +7,7 @@ import { LocationSearch } from "../components/LocationSearch";
 import { TimelineControls, getModeLabel } from "../components/TimelineControls";
 import { useLocationStore, hydrateLocationStore } from "../lib/api-client";
 import { useLiveTimestamp } from "../lib/useLiveTimestamp";
+import { formatLocalTime, getTimezoneAbbreviation } from "../lib/timezone";
 import dynamic from "next/dynamic";
 
 const SkyDomeCanvas = dynamic(
@@ -560,7 +561,7 @@ function SkyTimeMachineContent() {
   // Read URL params on mount to restore shared sky links
   useEffect(() => {
     const urlLat = searchParams.get("lat");
-    const urlLng = searchParams.get("lng");
+    const urlLng = searchParams.get("lng") ?? searchParams.get("lon");
     const urlDate = searchParams.get("date");
     const urlTime = searchParams.get("time");
     if (urlLat && urlLng) {
@@ -572,8 +573,18 @@ function SkyTimeMachineContent() {
         setLocation(pLat, pLng);
       }
     }
-    if (urlDate) setBaseDate(urlDate);
-    if (urlTime) setBaseTime(urlTime);
+    if (urlTime) {
+      try {
+        const d = new Date(decodeURIComponent(urlTime));
+        if (!isNaN(d.getTime())) {
+          setBaseDate(d.toISOString().split("T")[0]);
+          setBaseTime(d.toISOString().split("T")[1].substring(0, 5));
+        }
+      } catch { /* ignore */ }
+    } else {
+      if (urlDate) setBaseDate(urlDate);
+      if (urlTime && urlTime.length <= 5) setBaseTime(urlTime);
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -611,13 +622,25 @@ function SkyTimeMachineContent() {
     setTransitionKey((p) => p + 1);
   };
 
-  const handleShareSky = useCallback(() => {
-    const url = `${window.location.origin}/sky?lat=${lat}&lng=${lng}&date=${baseDate}&time=${baseTime}`;
-    navigator.clipboard.writeText(url).then(() => {
+  const handleShareSky = useCallback(async () => {
+    const isoTime = new Date(`${baseDate}T${baseTime}:00`).toISOString();
+    const url = `${window.location.origin}/sky?lat=${lat}&lon=${lng}&time=${encodeURIComponent(isoTime)}&date=${baseDate}`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: "Project Zenith Sky View", url });
+      } else {
+        await navigator.clipboard.writeText(url);
+      }
       setToastVisible(true);
       setTimeout(() => setToastVisible(false), 2500);
-    });
+    } catch {
+      /* user cancelled share */
+    }
   }, [lat, lng, baseDate, baseTime]);
+
+  const utcDisplay = activeDate.toISOString().replace("T", " ").slice(0, 19);
+  const localDisplay = formatLocalTime(activeDate, lat, lng);
+  const tzAbbr = getTimezoneAbbreviation(activeDate, lat, lng);
 
   return (
     <main className="flex-1 page-with-nav flex flex-col overflow-hidden" style={{ background: "#030409" }}>
@@ -703,6 +726,18 @@ function SkyTimeMachineContent() {
               onNow={handleNow}
             />
 
+            {/* UTC + Local Time */}
+            <div className="rounded-xl border border-white/5 bg-white/[0.02] px-4 py-3 space-y-2">
+              <div className="flex justify-between items-center font-mono text-[10px]">
+                <span className="text-slate-500 uppercase">🌐 UTC</span>
+                <span className="text-slate-200">{utcDisplay}</span>
+              </div>
+              <div className="flex justify-between items-center font-mono text-[10px]">
+                <span className="text-slate-500 uppercase">🕐 Local</span>
+                <span className="text-cyan-300">{localDisplay} {tzAbbr}</span>
+              </div>
+            </div>
+
             <p className="text-xs text-gray-500 font-mono">Last updated: {lastUpdated}</p>
 
             <div className="h-px bg-white/5" />
@@ -758,7 +793,7 @@ function SkyTimeMachineContent() {
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
 
           {/* Sky Visualization */}
-          <div className="relative flex-1 min-h-[300px] lg:min-h-0">
+          <div className="relative flex-1 min-h-[300px] lg:min-h-[600px] h-full">
             <AnimatePresence mode="wait">
               {skyData ? (
                 <motion.div

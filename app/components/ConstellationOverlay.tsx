@@ -1,6 +1,7 @@
 "use client";
 
 import type * as CesiumNS from "cesium";
+import { splitPolylineSegments } from "../globe/_components/SpaceVisualizer";
 
 export interface Constellation {
   name: string;
@@ -119,15 +120,18 @@ export function setupOrbitalTrail(
     trailPositions.push(new Cesium.Cartesian3(x, y, z));
   }
 
-  ds.entities.add({
-    name: "ISS Orbit Trail",
-    polyline: {
-      positions: trailPositions,
-      width: 2,
-      material: Cesium.Color.RED.withAlpha(0.4),
-      arcType: Cesium.ArcType.NONE,
-    },
-  });
+  const segments = splitPolylineSegments(Cesium, trailPositions);
+  for (const segment of segments) {
+    ds.entities.add({
+      name: "ISS Orbit Trail",
+      polyline: {
+        positions: segment,
+        width: 2,
+        material: Cesium.Color.RED.withAlpha(0.4),
+        arcType: Cesium.ArcType.NONE,
+      },
+    });
+  }
 
   ds.show = visible;
   viewer.dataSources.add(ds);

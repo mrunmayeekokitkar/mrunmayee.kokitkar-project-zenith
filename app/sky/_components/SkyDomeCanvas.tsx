@@ -412,7 +412,7 @@ export function SkyDomeCanvas({ lat, lng, date, issLat, issLng }: Props) {
   }, [render]);
 
   return (
-    <div ref={containerRef} className="w-full flex flex-col items-center gap-3">
+    <div ref={containerRef} className="w-full flex flex-col items-center gap-3 min-h-[400px]">
       <canvas
         ref={canvasRef}
         className="rounded-full border border-cyan-500/20 shadow-[0_0_40px_rgba(34,211,238,0.1)]"

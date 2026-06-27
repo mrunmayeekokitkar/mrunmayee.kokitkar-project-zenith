@@ -1,6 +1,57 @@
 import type * as CesiumNS from "cesium";
 import type { EciVec3 } from "satellite.js";
 
+/** Split polyline when consecutive points span >90° — prevents through-Earth lines */
+export function splitPolylineSegments(
+  Cesium: typeof CesiumNS,
+  positions: CesiumNS.Cartesian3[]
+): CesiumNS.Cartesian3[][] {
+  if (positions.length < 2) return positions.length ? [positions] : [];
+
+  const segments: CesiumNS.Cartesian3[][] = [];
+  let current: CesiumNS.Cartesian3[] = [positions[0]];
+
+  for (let i = 1; i < positions.length; i++) {
+    const prev = current[current.length - 1];
+    const next = positions[i];
+    const angle = Cesium.Cartesian3.angleBetween(prev, next);
+
+    if (angle > Cesium.Math.toRadians(90)) {
+      if (current.length > 1) segments.push(current);
+      current = [next];
+    } else {
+      current.push(next);
+    }
+  }
+
+  if (current.length > 1) segments.push(current);
+  return segments;
+}
+
+function addSegmentedPolylineEntities(
+  ds: CesiumNS.CustomDataSource,
+  Cesium: typeof CesiumNS,
+  positions: CesiumNS.Cartesian3[],
+  options: {
+    name?: string;
+    width: number;
+    material: CesiumNS.MaterialProperty | CesiumNS.Color;
+  }
+) {
+  const segments = splitPolylineSegments(Cesium, positions);
+  segments.forEach((segment, idx) => {
+    ds.entities.add({
+      name: options.name ? `${options.name} segment ${idx}` : undefined,
+      polyline: {
+        positions: segment,
+        width: options.width,
+        material: options.material,
+        arcType: Cesium.ArcType.NONE,
+      },
+    });
+  });
+}
+
 export function setupISSOrbit(
   viewer: CesiumNS.Viewer,
   Cesium: typeof CesiumNS,
@@ -27,17 +78,13 @@ export function setupISSOrbit(
     orbitPositions.push(new Cesium.Cartesian3(x, y, z));
   }
 
-  ds.entities.add({
+  addSegmentedPolylineEntities(ds, Cesium, orbitPositions, {
     name: "ISS Orbit Path",
-    polyline: {
-      positions: orbitPositions,
-      width: 3,
-      material: new Cesium.PolylineGlowMaterialProperty({
-        glowPower: 0.2,
-        color: Cesium.Color.CYAN.withAlpha(0.6),
-      }),
-      arcType: Cesium.ArcType.NONE, // Direct line between Cartesian points
-    },
+    width: 3,
+    material: new Cesium.PolylineGlowMaterialProperty({
+      glowPower: 0.2,
+      color: Cesium.Color.CYAN.withAlpha(0.6),
+    }),
   });
 
   // 2. Animate the ISS Point along the orbit
@@ -102,13 +149,9 @@ export function setupISSOrbit(
       const z = satRad * Math.sin(angle + k) * Math.sin(satInc);
       satPositions.push(new Cesium.Cartesian3(x, y, z));
     }
-    ds.entities.add({
-      polyline: {
-        positions: satPositions,
-        width: 1.5,
-        material: Cesium.Color.WHITE.withAlpha(0.15),
-        arcType: Cesium.ArcType.NONE,
-      },
+    addSegmentedPolylineEntities(ds, Cesium, satPositions, {
+      width: 1.5,
+      material: Cesium.Color.WHITE.withAlpha(0.15),
     });
   }
 
@@ -303,14 +346,10 @@ export function setupRadarSatellites(
       orbitPositions.push(new Cesium.Cartesian3(x, y, z));
     }
 
-    ds.entities.add({
+    addSegmentedPolylineEntities(ds, Cesium, orbitPositions, {
       name: `${sat.name} Orbit`,
-      polyline: {
-        positions: orbitPositions,
-        width: 1,
-        material: Cesium.Color.CYAN.withAlpha(0.08),
-        arcType: Cesium.ArcType.NONE,
-      },
+      width: 1,
+      material: Cesium.Color.CYAN.withAlpha(0.08),
     });
 
     // Create sampled position property for animated motion
@@ -453,17 +492,13 @@ export async function setupMultiSatelliteOrbits(
 
         const cesColor = Cesium.Color.fromCssColorString(cfg.color).withAlpha(0.7);
 
-        ds.entities.add({
+        addSegmentedPolylineEntities(ds, Cesium, positions, {
           name: `${cfg.name} Orbit`,
-          polyline: {
-            positions,
-            width: cfg.width,
-            material: new Cesium.PolylineGlowMaterialProperty({
-              glowPower: 0.15,
-              color: cesColor,
-            }),
-            arcType: Cesium.ArcType.NONE,
-          },
+          width: cfg.width,
+          material: new Cesium.PolylineGlowMaterialProperty({
+            glowPower: 0.15,
+            color: cesColor,
+          }),
         });
       } catch (err) {
         console.warn(`[MultiSat] Failed to draw orbit for ${cfg.name}:`, err);
