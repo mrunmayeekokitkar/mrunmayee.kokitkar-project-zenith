@@ -217,7 +217,7 @@ export default function ChallengeClient() {
     { label: "New Delhi", coords: "28.6139,77.2090" },
     { label: "New York", coords: "40.7128,-74.0060" },
     { label: "Svalbard", coords: "78.2232,15.6267" },
-    { label: "Pacific Ocean", coords: "0,0" },
+    { label: "Pacific Ocean", coords: "0,170" },
   ];
 
   return (

@@ -87,6 +87,21 @@ export function setupISSOrbit(
     }),
   });
 
+  // Add custom data to orbit entities for click interaction
+  ds.entities.values.forEach((entity) => {
+    if (entity.name && entity.name.includes("ISS Orbit Path")) {
+      ((entity as unknown) as Record<string, unknown>).customData = {
+        id: "iss_orbit",
+        name: "ISS Orbit",
+        type: "orbit",
+        altitude: 408,
+        inclination: 51.6,
+        period: 92,
+        description: "International Space Station orbital path at 408km altitude"
+      };
+    }
+  });
+
   // 2. Animate the ISS Point along the orbit
   const positionProperty = new Cesium.SampledPositionProperty();
   const startTime = viewer.clock.currentTime;

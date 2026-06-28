@@ -92,12 +92,13 @@ function DashboardContent() {
     const urlLat = searchParams.get("lat");
     const urlLng = searchParams.get("lng") ?? searchParams.get("lon");
     const urlCity = searchParams.get("city");
+    const urlLocation = searchParams.get("location");
 
     if (urlLat && urlLng) {
       const parsedLat = parseFloat(urlLat);
       const parsedLng = parseFloat(urlLng);
       if (!isNaN(parsedLat) && !isNaN(parsedLng)) {
-        setLocation(parsedLat, parsedLng, urlCity ?? undefined);
+        setLocation(parsedLat, parsedLng, urlLocation || urlCity || undefined);
         setLat(parsedLat);
         setLng(parsedLng);
         setLocationReady(true);
@@ -151,8 +152,9 @@ function DashboardContent() {
       const forceTimeout = setTimeout(() => {
         if (requestIdRef.current === currentRequestId) {
           setLoading(false);
+          setCachedAt(new Date().toISOString());
         }
-      }, 3000);
+      }, 10000);
 
       try {
         const [iss, sats, , wxData] = await Promise.all([

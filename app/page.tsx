@@ -271,7 +271,7 @@ const FEATURES = [
     icon: "🔭",
     title: "Cosmic Twin Score",
     body: "AI-computed 0–100 score rating observation quality, sky clarity, and planetary visibility for your site.",
-    href: "/dashboard",
+    href: "/dashboard/challenge",
     color: "from-amber-500/20 to-orange-400/5",
     accent: "#fbbf24",
   },
@@ -341,7 +341,8 @@ function LocationSearchWrapper() {
     <DynamicLocationSearch
       onLocationSelect={(lat, lng, name) => {
         setLocation(lat, lng, name);
-        router.push(`/dashboard?lat=${lat}&lng=${lng}`);
+        const locationParam = name ? `&location=${encodeURIComponent(name)}` : '';
+        router.push(`/dashboard?lat=${lat}&lng=${lng}${locationParam}`);
       }}
     />
   );

@@ -191,8 +191,8 @@ function drawSkyDome(
     ctx.stroke();
     ctx.setLineDash([]);
     // Label
-    ctx.fillStyle = "rgba(255,255,255,0.2)";
-    ctx.font = "10px monospace";
+    ctx.fillStyle = "rgba(255,255,255,0.4)";
+    ctx.font = "bold 12px monospace";
     ctx.fillText(`${alt}°`, cx + ringR + 3, cy);
   });
 
@@ -211,13 +211,13 @@ function drawSkyDome(
     { label: "S", az: 180 },
     { label: "W", az: 270 },
   ];
-  ctx.font = "bold 12px monospace";
-  ctx.fillStyle = "rgba(56,189,248,0.8)";
+  ctx.font = "bold 14px monospace";
+  ctx.fillStyle = "rgba(56,189,248,0.9)";
   cardinals.forEach(({ label, az }) => {
     const azRad = toRad(az);
     const lx = cx + (r + 2) * Math.sin(azRad);
     const ly = cy - (r + 2) * Math.cos(azRad);
-    ctx.fillText(label, lx - 4, ly + 4);
+    ctx.fillText(label, lx - 5, ly + 5);
   });
 
   // Compute LST
@@ -246,11 +246,11 @@ function drawSkyDome(
     ctx.fill();
     ctx.shadowBlur = 0;
 
-    // Label brighter stars
+    // Label brighter stars (whitelist: only named stars from BRIGHT_STARS catalog)
     if (star.mag < 0.9) {
-      ctx.font = "10px monospace";
-      ctx.fillStyle = "rgba(200,220,255,0.7)";
-      ctx.fillText(star.name, pos.x + sr + 3, pos.y - 2);
+      ctx.font = "bold 12px monospace";
+      ctx.fillStyle = "rgba(200,220,255,0.85)";
+      ctx.fillText(star.name, pos.x + sr + 4, pos.y - 2);
     }
   });
 

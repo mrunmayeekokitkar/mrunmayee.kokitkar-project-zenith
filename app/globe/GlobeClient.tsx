@@ -75,22 +75,12 @@ export function GlobeClient() {
   const [showConstellationOverlay, setShowConstellationOverlay] = useState(false);
 
   // New features state
-  const [isNightMode, setIsNightMode] = useState(false);
   const [showRadar, setShowRadar] = useState(false);
   const [timelineOffset, setTimelineOffset] = useState(0); // In hours (-24 to +24)
   const [chatOpen, setChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState("");
   const [chatMessages, setChatMessages] = useState<{ sender: "user" | "ai"; text: string }[]>([
     { sender: "ai", text: "Welcome Observer. Lock onto a coordinate or click Stargazing targets to begin telemetry report." }
-  ]);
-
-  // Gamification: Mission Mode state
-  const [isMissionMode, setIsMissionMode] = useState(false);
-  const [missionTasks, setMissionTasks] = useState([
-    { id: "iss", label: "Inspect coordinates near ISS orbital path", done: false, desc: "Click close to the glowing cyan ISS orbit line." },
-    { id: "night", label: "Observe Stargazing conditions at Night", done: false, desc: "Turn on Night Mode and drag timeline offset to night time." },
-    { id: "radar", label: "Launch Satellite Radar mode", done: false, desc: "Enable Radar Mode to visualize active satellites." },
-    { id: "everest", label: "Fly to Mount Everest landmark preset", done: false, desc: "Use the landmark presets to inspect Everest's elevation." },
   ]);
 
   // Mobile controls drawer
@@ -212,10 +202,19 @@ export function GlobeClient() {
       setLoadProgress(100);
       return;
     }
+    let progress = 0;
     const interval = setInterval(() => {
-      setLoadProgress((prev) => Math.min(prev + Math.random() * 30, 90));
-    }, 200);
-    const timeout = setTimeout(() => setLoadProgress(100), 2000);
+      progress += Math.random() * 15 + 5;
+      if (progress >= 95) {
+        progress = 95;
+        clearInterval(interval);
+      }
+      setLoadProgress(progress);
+    }, 150);
+    const timeout = setTimeout(() => {
+      setLoadProgress(100);
+      clearInterval(interval);
+    }, 2500);
     return () => {
       clearInterval(interval);
       clearTimeout(timeout);
@@ -379,11 +378,11 @@ export function GlobeClient() {
       const homeView = Cesium.Cartesian3.fromDegrees(0, 0, 22_000_000);
       viewer.camera.setView({ destination: homeView });
 
-      // Click handler on Earth (Interprets terrain coordinates vs clicked satellites)
+      // Click handler on Earth (Interprets terrain coordinates vs clicked satellites/orbits)
       const handleClick = (movement: { position?: CesiumNS.Cartesian2 }) => {
         if (!movement.position) return;
 
-        // Try picking satellite first
+        // Try picking satellite or orbit first
         const pickedObject = viewer.scene.pick(movement.position);
         if (Cesium.defined(pickedObject) && pickedObject.id) {
           const entity = pickedObject.id as CesiumNS.Entity;
@@ -598,36 +597,7 @@ export function GlobeClient() {
         radarDataSourceRef.current.show = false;
       }
     }
-  }, [showRadar, isMissionMode]);
-
-  // ── Sync Day/Night Lighting Mode ──
-  useEffect(() => {
-    const viewer = viewerRef.current;
-    if (!viewer) return;
-
-    // Night mode ON = dark side visible with lighting terminator + stars
-    // Night mode OFF = evenly lit day view
-    viewer.scene.globe.enableLighting = isNightMode;
-    viewer.scene.globe.atmosphereLightIntensity = isNightMode ? 8.0 : 22.0;
-    if (viewer.scene.skyBox) {
-      viewer.scene.skyBox.show = isNightMode;
-    }
-    viewer.scene.backgroundColor = cesiumRef.current?.Color.fromCssColorString(
-      isNightMode ? "#03040a" : "#0a1628"
-    ) ?? viewer.scene.backgroundColor;
-
-    if (isNightMode && isMissionMode) {
-      const Cesium = cesiumRef.current;
-      if (Cesium) {
-        const time = viewer.clock.currentTime;
-        const date = Cesium.JulianDate.toDate(time);
-        const hour = date.getUTCHours();
-        if (hour >= 20 || hour <= 4) {
-          setMissionTasks(prev => prev.map(t => t.id === "night" ? { ...t, done: true } : t));
-        }
-      }
-    }
-  }, [isNightMode, isMissionMode]);
+  }, [showRadar]);
 
   // ── Sync Timeline Scrubber Clock Time ──
   useEffect(() => {
@@ -635,20 +605,12 @@ export function GlobeClient() {
     const Cesium = cesiumRef.current;
     if (!viewer || !Cesium) return;
 
-    // Use current base date
-    const baseTime = Cesium.JulianDate.fromDate(new Date("2026-06-24T12:00:00Z"));
+    // Use current real-time as base for simulation
+    const baseTime = Cesium.JulianDate.fromDate(new Date());
     const newTime = Cesium.JulianDate.addHours(baseTime, timelineOffset, new Cesium.JulianDate());
     viewer.clock.currentTime = newTime;
-
-    // Complete mission task: Observe stargazing window at night
-    if (isMissionMode && isNightMode) {
-      const date = Cesium.JulianDate.toDate(newTime);
-      const hour = date.getUTCHours();
-      if (hour >= 20 || hour <= 4) {
-        setMissionTasks(prev => prev.map(t => t.id === "night" ? { ...t, done: true } : t));
-      }
-    }
-  }, [timelineOffset, isNightMode, isMissionMode]);
+    viewer.clock.shouldAnimate = false; // Pause animation for manual timeline control
+  }, [timelineOffset]);
 
   // ── 2. Handle Auto-Rotation (Smooth, frame-rate independent)
   useEffect(() => {
@@ -865,26 +827,6 @@ export function GlobeClient() {
       <div className="pointer-events-auto fixed top-24 right-6 z-[1000] flex items-center gap-2">
         <button
           type="button"
-          onClick={() => setIsNightMode(!isNightMode)}
-          className="flex items-center gap-2 rounded-full border border-white/10 bg-slate-950/80 px-4 py-2 font-mono text-[10px] uppercase tracking-widest text-slate-300 backdrop-blur-md transition-all hover:border-sky-400/30 hover:bg-slate-950/90 hover:text-sky-300 cursor-pointer shadow-lg"
-        >
-          {isNightMode ? "🌙 Night Mode [ON]" : "☀️ Day Mode [ON]"}
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setIsMissionMode(!isMissionMode)}
-          className={`flex items-center gap-2 rounded-full border px-4 py-2 font-mono text-[10px] uppercase tracking-widest backdrop-blur-md transition-all cursor-pointer shadow-lg ${
-            isMissionMode 
-              ? "border-emerald-500/40 bg-emerald-950/80 text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.2)]" 
-              : "border-white/10 bg-slate-950/80 text-slate-300 hover:border-emerald-400/30 hover:text-emerald-300"
-          }`}
-        >
-          🛰 Mission Mode
-        </button>
-
-        <button
-          type="button"
           onClick={handleResetView}
           className="flex items-center gap-2 rounded-full border border-white/10 bg-slate-950/80 px-4 py-2 font-mono text-[10px] uppercase tracking-widest text-slate-300 backdrop-blur-md transition-all hover:border-sky-400/30 hover:bg-slate-950/90 hover:text-sky-300 cursor-pointer shadow-lg"
         >
@@ -912,47 +854,6 @@ export function GlobeClient() {
           <LocationSearch showCurrentLocation onLocationSelect={handleLocationSelect} />
         </div>
 
-        {/* ── Left Side: Mission Checklist Panel ── */}
-        {isMissionMode && (
-          <div className="relative overflow-hidden rounded-2xl border border-emerald-500/20 bg-slate-950/85 p-5 shadow-[0_12px_40px_rgba(0,0,0,0.7)] backdrop-blur-xl">
-            <div className="absolute top-0 right-0 h-[2px] bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-500" style={{ width: `${missionProgress}%` }} />
-            
-            <div className="flex items-center justify-between border-b border-white/5 pb-3">
-              <div>
-                <p className="font-mono text-[9px] uppercase tracking-widest text-emerald-400">Space Observer Control</p>
-                <h3 className="text-sm font-semibold text-slate-100 mt-0.5">Active Mission Log</h3>
-              </div>
-              <span className="font-mono text-xs font-bold text-emerald-400">{missionProgress}%</span>
-            </div>
-
-            <div className="mt-4 flex flex-col gap-3.5">
-              {missionTasks.map(t => (
-                <div key={t.id} className="flex items-start gap-3">
-                  <div className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border border-white/10 bg-white/[0.02]">
-                    {t.done && (
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="3">
-                        <path d="M20 6 9 17l-5-5" strokeLinecap="round" strokeLinejoin="round"/>
-                      </svg>
-                    )}
-                  </div>
-                  <div>
-                    <p className={`text-[11px] font-medium leading-tight transition-colors ${t.done ? "text-slate-400 line-through" : "text-slate-200"}`}>
-                      {t.label}
-                    </p>
-                    <p className="text-[9px] text-slate-500 mt-0.5 leading-normal">{t.desc}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {missionProgress === 100 && (
-              <div className="mt-5 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-3 text-center animate-pulse">
-                <p className="font-mono text-[10px] uppercase tracking-widest text-emerald-400 font-bold">✓ Mission Complete</p>
-                <p className="text-[9px] text-slate-300 mt-1">Excellent telemetry scan. Stargazing report finalized.</p>
-              </div>
-            )}
-          </div>
-        )}
         {/* Stargazing Report — stacked below search, scrollable */}
         {selected && selectedDetails && (
           <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-slate-950/85 p-5 shadow-[0_8px_32px_rgba(0,0,0,0.6)] backdrop-blur-xl shrink-0 z-10 max-h-[50vh] overflow-y-auto">
@@ -1388,7 +1289,6 @@ export function GlobeClient() {
           </div>
           <div className="flex flex-col gap-3">
             {[
-              { label: "🌙 Night Mode",     checked: isNightMode,             set: setIsNightMode },
               { label: "✨ Constellation Lines", checked: showConstellationOverlay, set: setShowConstellationOverlay },
               { label: "🛰 Orbit Trail",    checked: showOrbitTrail,          set: setShowOrbitTrail },
               { label: "Satellite Radar",   checked: showRadar,               set: (v: boolean) => { setShowRadar(v); setSelectedSatellite(null); } },

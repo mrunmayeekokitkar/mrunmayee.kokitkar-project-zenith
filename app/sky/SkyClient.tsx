@@ -8,6 +8,7 @@ import { TimelineControls, getModeLabel } from "../components/TimelineControls";
 import { useLocationStore, hydrateLocationStore } from "../lib/api-client";
 import { useLiveTimestamp } from "../lib/useLiveTimestamp";
 import { formatLocalTime, getTimezoneAbbreviation } from "../lib/timezone";
+import * as Astronomy from "astronomy-engine";
 import dynamic from "next/dynamic";
 
 const SkyDomeCanvas = dynamic(
@@ -65,48 +66,36 @@ function getVisiblePlanets(date: Date): string[] {
 }
 
 function calculateSkyData(date: Date, coords: GeoCoords): SkyData {
+  // Use astronomy-engine for accurate sun position based on coordinates (not browser timezone)
+  const observer = new Astronomy.Observer(coords.lat, coords.lng, 0);
+  const sunEquator = Astronomy.Equator('Sun', date, observer, true, true);
+  const sunHorizon = Astronomy.Horizon(date, observer, sunEquator.ra, sunEquator.dec, 'normal');
+  
+  const sunAlt = sunHorizon.altitude;
+  const sunAz = sunHorizon.azimuth;
+
+  // Calculate moon phase using astronomy-engine
+  const moon = Astronomy.SearchMoonPhase(date);
+  const moonPhase = moon.phase;
+  const moonPhaseName = getMoonPhaseName(moonPhase);
+
+  // Calculate sidereal time
   const jd = (date.getTime() / 86400000) + 2440587.5;
   const d = jd - 2451545.0;
-
   let gmst = 18.697374558 + 24.06570982441908 * d;
   gmst = ((gmst % 24) + 24) % 24;
   const lmst = ((gmst + coords.lng / 15) % 24 + 24) % 24;
 
-  const q = (280.459 + 0.98564736 * d) % 360;
-  const g = ((357.529 + 0.98560028 * d) % 360) * (Math.PI / 180);
-  const eclipticLon = (q + 1.915 * Math.sin(g) + 0.020 * Math.sin(2 * g)) * (Math.PI / 180);
-  const epsilon = (23.439 - 0.00000036 * d) * (Math.PI / 180);
-
-  let ra = Math.atan2(Math.cos(epsilon) * Math.sin(eclipticLon), Math.cos(eclipticLon));
-  const dec = Math.asin(Math.sin(epsilon) * Math.sin(eclipticLon));
-  ra = (((ra * 180 / Math.PI) / 15) + 24) % 24;
-
-  const ha = (lmst - ra) * 15 * (Math.PI / 180);
-  const latRad = coords.lat * (Math.PI / 180);
-
-  let sunAlt = Math.asin(Math.sin(latRad) * Math.sin(dec) + Math.cos(latRad) * Math.cos(dec) * Math.cos(ha));
-  let sunAz = Math.atan2(-Math.sin(ha), Math.cos(latRad) * Math.tan(dec) - Math.sin(latRad) * Math.cos(ha));
-  sunAlt = sunAlt * (180 / Math.PI);
-  sunAz = ((sunAz * (180 / Math.PI)) + 360) % 360;
-
-  const synodicMonth = 29.53058867;
-  const knownNewMoon = new Date(Date.UTC(2000, 0, 6, 18, 14)).getTime();
-  const phase = ((date.getTime() - knownNewMoon) / 86400000) % synodicMonth;
-  const moonPhaseOut = ((phase / synodicMonth) + 1) % 1;
-
-  const cosW0 = (Math.sin(-0.0145) - Math.sin(latRad) * Math.sin(dec)) / (Math.cos(latRad) * Math.cos(dec));
-  let dayLength = 12;
-  if (cosW0 >= 1) dayLength = 0;
-  else if (cosW0 <= -1) dayLength = 24;
-  else dayLength = (Math.acos(cosW0) * 180 / Math.PI) / 15 * 2;
+  // Calculate day length using astronomy-engine
+  const dayLength = Astronomy.DayLength(coords.lat, date);
 
   const isTwilight = sunAlt > -18 && sunAlt <= 0;
 
   return {
     sunAltitude: sunAlt,
     sunAzimuth: sunAz,
-    moonPhase: moonPhaseOut,
-    moonPhaseName: getMoonPhaseName(moonPhaseOut),
+    moonPhase: moonPhase,
+    moonPhaseName,
     siderealTime: lmst,
     dayLengthHr: dayLength,
     isDay: sunAlt > -0.83,
@@ -553,6 +542,7 @@ function SkyTimeMachineContent() {
   const [skyData, setSkyData] = useState<SkyData>(() => calculateSkyData(now, { lat: 19.076, lng: 72.8777 }));
   const [transitionKey, setTransitionKey] = useState(0);
   const [toastVisible, setToastVisible] = useState(false);
+  const [toastMsg, setToastMsg] = useState('');
 
   useEffect(() => {
     hydrateLocationStore();
@@ -562,15 +552,18 @@ function SkyTimeMachineContent() {
   useEffect(() => {
     const urlLat = searchParams.get("lat");
     const urlLng = searchParams.get("lng") ?? searchParams.get("lon");
+    const urlLocation = searchParams.get("location");
+    const urlTime = searchParams.get("t") ?? searchParams.get("time");
     const urlDate = searchParams.get("date");
-    const urlTime = searchParams.get("time");
+    
     if (urlLat && urlLng) {
       const pLat = parseFloat(urlLat);
       const pLng = parseFloat(urlLng);
       if (!isNaN(pLat) && !isNaN(pLng)) {
         setLat(pLat);
         setLng(pLng);
-        setLocation(pLat, pLng);
+        setLocation(pLat, pLng, urlLocation || undefined);
+        if (urlLocation) setLocName(urlLocation);
       }
     }
     if (urlTime) {
@@ -581,9 +574,8 @@ function SkyTimeMachineContent() {
           setBaseTime(d.toISOString().split("T")[1].substring(0, 5));
         }
       } catch { /* ignore */ }
-    } else {
-      if (urlDate) setBaseDate(urlDate);
-      if (urlTime && urlTime.length <= 5) setBaseTime(urlTime);
+    } else if (urlDate) {
+      setBaseDate(urlDate);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -624,19 +616,31 @@ function SkyTimeMachineContent() {
 
   const handleShareSky = useCallback(async () => {
     const isoTime = new Date(`${baseDate}T${baseTime}:00`).toISOString();
-    const url = `${window.location.origin}/sky?lat=${lat}&lon=${lng}&time=${encodeURIComponent(isoTime)}&date=${baseDate}`;
+    const params = new URLSearchParams({
+      lat: lat.toString(),
+      lng: lng.toString(),
+      location: locName || 'Unknown',
+      t: isoTime,
+    });
+    const shareUrl = `${window.location.origin}/sky?${params.toString()}`;
+    
     try {
       if (navigator.share) {
-        await navigator.share({ title: "Project Zenith Sky View", url });
+        await navigator.share({
+          title: `Sky above ${locName} — Project Zenith`,
+          text: `See the celestial view above ${locName} on ${new Date(isoTime).toLocaleString()}`,
+          url: shareUrl,
+        });
       } else {
-        await navigator.clipboard.writeText(url);
+        await navigator.clipboard.writeText(shareUrl);
       }
+      setToastMsg('🔗 Link copied to clipboard!');
       setToastVisible(true);
-      setTimeout(() => setToastVisible(false), 2500);
+      setTimeout(() => setToastVisible(false), 3000);
     } catch {
       /* user cancelled share */
     }
-  }, [lat, lng, baseDate, baseTime]);
+  }, [lat, lng, baseDate, baseTime, locName]);
 
   const utcDisplay = activeDate.toISOString().replace("T", " ").slice(0, 19);
   const localDisplay = formatLocalTime(activeDate, lat, lng);
@@ -651,7 +655,7 @@ function SkyTimeMachineContent() {
       >
         <div className="rounded-full border border-emerald-500/30 bg-slate-950/90 backdrop-blur-xl px-6 py-3 shadow-2xl flex items-center gap-2">
           <span className="text-emerald-400">🔗</span>
-          <span className="font-mono text-[11px] text-slate-200">Copied! Sky link in clipboard.</span>
+          <span className="font-mono text-[11px] text-slate-200">{toastMsg || 'Copied! Sky link in clipboard.'}</span>
         </div>
       </div>
 
