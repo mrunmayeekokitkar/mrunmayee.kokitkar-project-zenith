@@ -73,6 +73,7 @@ export function GlobeClient() {
   const [showConstellations, setShowConstellations] = useState(false);
   const [showOrbitTrail, setShowOrbitTrail] = useState(false);
   const [showConstellationOverlay, setShowConstellationOverlay] = useState(false);
+  const [isNightMode] = useState(true);
 
   // New features state
   const [showRadar, setShowRadar] = useState(false);
@@ -85,6 +86,14 @@ export function GlobeClient() {
 
   // Mobile controls drawer
   const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
+
+  // Mission mode state
+  const [isMissionMode, setIsMissionMode] = useState(false);
+  const [missionTasks, setMissionTasks] = useState([
+    { id: "iss", done: false },
+    { id: "radar", done: false },
+    { id: "everest", done: false },
+  ]);
 
   const issDataSourceRef = useRef<CesiumNS.CustomDataSource | null>(null);
   const constellationsDataSourceRef = useRef<CesiumNS.CustomDataSource | null>(null);
@@ -371,7 +380,7 @@ export function GlobeClient() {
       viewer.scene.fog.enabled = true;
       viewer.scene.fog.density = 0.0001;
       if (viewer.scene.skyBox) {
-        viewer.scene.skyBox.show = true;
+        (viewer.scene.skyBox as unknown as { show: boolean }).show = true;
       }
       viewer.scene.globe.depthTestAgainstTerrain = true;
 

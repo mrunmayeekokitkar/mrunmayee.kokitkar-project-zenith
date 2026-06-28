@@ -68,15 +68,15 @@ function getVisiblePlanets(date: Date): string[] {
 function calculateSkyData(date: Date, coords: GeoCoords): SkyData {
   // Use astronomy-engine for accurate sun position based on coordinates (not browser timezone)
   const observer = new Astronomy.Observer(coords.lat, coords.lng, 0);
-  const sunEquator = Astronomy.Equator('Sun', date, observer, true, true);
+  const sunEquator = Astronomy.Equator(Astronomy.Body.Sun, date, observer, true, true);
   const sunHorizon = Astronomy.Horizon(date, observer, sunEquator.ra, sunEquator.dec, 'normal');
   
   const sunAlt = sunHorizon.altitude;
   const sunAz = sunHorizon.azimuth;
 
   // Calculate moon phase using astronomy-engine
-  const moon = Astronomy.SearchMoonPhase(date);
-  const moonPhase = moon.phase;
+  const moonPhaseLon = Astronomy.MoonPhase(date);
+  const moonPhase = moonPhaseLon / 360;
   const moonPhaseName = getMoonPhaseName(moonPhase);
 
   // Calculate sidereal time
@@ -86,8 +86,10 @@ function calculateSkyData(date: Date, coords: GeoCoords): SkyData {
   gmst = ((gmst % 24) + 24) % 24;
   const lmst = ((gmst + coords.lng / 15) % 24 + 24) % 24;
 
-  // Calculate day length using astronomy-engine
-  const dayLength = Astronomy.DayLength(coords.lat, date);
+  // Calculate day length from sunrise/sunset
+  const rise = Astronomy.SearchRiseSet(Astronomy.Body.Sun, observer, +1, date, 1);
+  const set = Astronomy.SearchRiseSet(Astronomy.Body.Sun, observer, -1, date, 1);
+  const dayLength = rise && set ? (set.ut - rise.ut) * 24 : 12;
 
   const isTwilight = sunAlt > -18 && sunAlt <= 0;
 

@@ -1,8 +1,6 @@
-import type { NextConfig } from "next";
-
-const nextConfig: NextConfig = {
+/** @type {import('next').NextConfig} */
+const nextConfig = {
   reactStrictMode: true,
-  turbopack: {}, // explicit empty config silences the webpack/Turbopack warning
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "apod.nasa.gov" },
@@ -12,7 +10,6 @@ const nextConfig: NextConfig = {
   },
   webpack: (config, { isServer }) => {
     if (!isServer) {
-      // Handle node: URI scheme — browser can't use these, set to false
       config.resolve = config.resolve || {};
       config.resolve.fallback = {
         ...(config.resolve.fallback || {}),
@@ -27,11 +24,9 @@ const nextConfig: NextConfig = {
       };
     }
 
-    // Silence unknown context critical warnings from large packages
     config.module = config.module || {};
     config.module.unknownContextCritical = false;
 
-    // External mapping for Cesium
     config.externals = [...(config.externals || []), { cesium: "Cesium" }];
 
     return config;
